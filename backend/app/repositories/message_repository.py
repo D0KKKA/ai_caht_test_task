@@ -53,6 +53,32 @@ class MessageRepository(BaseRepository[Message]):
         self, chat_id: UUID, limit: int = 20
     ) -> List[Message]:
         """Get the N most recent non-summarized messages for context building."""
+        if limit <= 0:
+            return []
+
+        query = (
+            select(Message)
+            .where(
+                and_(
+                    Message.chat_id == chat_id,
+                    Message.is_summarized == False,  # noqa: E712
+                )
+            )
+            .order_by(Message.created_at.desc())
+            .limit(limit)
+        )
+        result = await self.db.execute(query)
+        recent_messages = result.scalars().all()
+        recent_messages.reverse()
+        return recent_messages
+
+    async def get_oldest_unsummarized(
+        self, chat_id: UUID, limit: int
+    ) -> List[Message]:
+        """Get the oldest non-summarized messages for summarization."""
+        if limit <= 0:
+            return []
+
         query = (
             select(Message)
             .where(
@@ -62,11 +88,10 @@ class MessageRepository(BaseRepository[Message]):
                 )
             )
             .order_by(Message.created_at.asc())
+            .limit(limit)
         )
         result = await self.db.execute(query)
-        all_messages = result.scalars().all()
-        # Return only the last `limit` messages
-        return all_messages[-limit:] if len(all_messages) > limit else all_messages
+        return result.scalars().all()
 
     async def count_unsummarized(self, chat_id: UUID) -> int:
         """Count non-summarized messages for a chat."""
@@ -79,7 +104,12 @@ class MessageRepository(BaseRepository[Message]):
         result = await self.db.execute(query)
         return result.scalar() or 0
 
-    async def mark_as_summarized(self, message_ids: List[UUID]) -> int:
+    async def mark_as_summarized(
+        self,
+        message_ids: List[UUID],
+        *,
+        commit: bool = True,
+    ) -> int:
         """Mark messages as summarized by their IDs. Returns count of updated rows."""
         if not message_ids:
             return 0
@@ -91,5 +121,7 @@ class MessageRepository(BaseRepository[Message]):
             .execution_options(synchronize_session=False)
         )
         result = await self.db.execute(stmt)
-        await self.db.commit()
+        await self.db.flush()
+        if commit:
+            await self.db.commit()
         return result.rowcount

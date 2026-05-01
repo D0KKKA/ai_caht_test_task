@@ -103,11 +103,7 @@ class ChatService:
             db: Database session
         """
         self.chat_repo.db = db
-
-        chat = await self.chat_repo.get_by_id(chat_id)
-        if chat:
-            new_count = chat.message_count + count
-            await self.chat_repo.update(chat_id, message_count=new_count)
+        await self.chat_repo.increment_message_count(chat_id, count)
 
     async def maybe_generate_title(
         self, chat_id: UUID, first_message: str, db: AsyncSession
@@ -142,7 +138,7 @@ class ChatService:
             # Truncate to reasonable length
             title = title[:TITLE_MAX_LENGTH]
 
-            # Update chat with generated title
-            await self.chat_repo.update(chat_id, title=title)
+            # Update chat with generated title only if still untitled.
+            await self.chat_repo.set_title_if_absent(chat_id, title)
         except Exception as e:
             logger.error("Title generation failed for chat %s: %s", chat_id, e)

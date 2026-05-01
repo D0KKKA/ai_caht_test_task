@@ -1,4 +1,4 @@
-"""Database setup with async SQLAlchemy and SQLite."""
+"""Database setup with async SQLAlchemy."""
 
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
@@ -42,18 +42,14 @@ async def init_db() -> None:
         expire_on_commit=False,
     )
 
-    # Create all tables
-    async with _engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-
 async def close_db() -> None:
     """Close database connection."""
-    global _engine
+    global _engine, _async_session_maker
 
     if _engine:
         await _engine.dispose()
         _engine = None
+        _async_session_maker = None
 
 
 async def get_db() -> AsyncSession:

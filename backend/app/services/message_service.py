@@ -15,7 +15,12 @@ class MessageService:
         self.message_repo = message_repo
 
     async def create_user_message(
-        self, chat_id: UUID, content: str, db: AsyncSession
+        self,
+        chat_id: UUID,
+        content: str,
+        db: AsyncSession,
+        *,
+        commit: bool = True,
     ) -> Message:
         """Create a user message in the chat.
 
@@ -30,10 +35,15 @@ class MessageService:
         self.message_repo.db = db
 
         message = Message(chat_id=chat_id, role="user", content=content)
-        return await self.message_repo.create(message)
+        return await self.message_repo.create(message, commit=commit)
 
     async def create_assistant_message(
-        self, chat_id: UUID, content: str, db: AsyncSession
+        self,
+        chat_id: UUID,
+        content: str,
+        db: AsyncSession,
+        *,
+        commit: bool = True,
     ) -> Message:
         """Create an assistant message in the chat.
 
@@ -48,7 +58,7 @@ class MessageService:
         self.message_repo.db = db
 
         message = Message(chat_id=chat_id, role="assistant", content=content)
-        return await self.message_repo.create(message)
+        return await self.message_repo.create(message, commit=commit)
 
     async def get_chat_messages(
         self, chat_id: UUID, db: AsyncSession, limit: int = 100, offset: int = 0

@@ -22,12 +22,21 @@ class BaseRepository(Generic[ModelT]):
         self.model = model
         self.db = db
 
-    async def create(self, obj: ModelT) -> ModelT:
+    async def create(
+        self,
+        obj: ModelT,
+        *,
+        commit: bool = True,
+        refresh: bool = True,
+    ) -> ModelT:
         """Create and return a new object."""
         try:
             self.db.add(obj)
-            await self.db.commit()
-            await self.db.refresh(obj)
+            await self.db.flush()
+            if commit:
+                await self.db.commit()
+            if refresh:
+                await self.db.refresh(obj)
             return obj
         except IntegrityError as e:
             await self.db.rollback()
@@ -47,7 +56,14 @@ class BaseRepository(Generic[ModelT]):
         result = await self.db.execute(query)
         return result.scalars().all()
 
-    async def update(self, id, **kwargs) -> ModelT | None:
+    async def update(
+        self,
+        id,
+        *,
+        commit: bool = True,
+        refresh: bool = True,
+        **kwargs,
+    ) -> ModelT | None:
         """Update object by id and return updated object."""
         obj = await self.get_by_id(id)
         if not obj:
@@ -56,18 +72,23 @@ class BaseRepository(Generic[ModelT]):
         for key, value in kwargs.items():
             setattr(obj, key, value)
 
-        await self.db.commit()
-        await self.db.refresh(obj)
+        await self.db.flush()
+        if commit:
+            await self.db.commit()
+        if refresh:
+            await self.db.refresh(obj)
         return obj
 
-    async def delete(self, id) -> bool:
+    async def delete(self, id, *, commit: bool = True) -> bool:
         """Delete object by id and return success status."""
         obj = await self.get_by_id(id)
         if not obj:
             return False
 
         await self.db.delete(obj)
-        await self.db.commit()
+        await self.db.flush()
+        if commit:
+            await self.db.commit()
         return True
 
     async def count(self) -> int:

@@ -62,8 +62,14 @@ class ContextService:
                 }
             )
 
+        # Keep enough unsummarized messages to avoid any gap between the summary
+        # and the active context window after a summarization pass.
+        active_context_limit = max(
+            self.settings.recent_messages_kept,
+            self.settings.message_threshold,
+        )
         recent_messages = await self.message_repo.get_recent_unsummarized(
-            chat_id, limit=self.settings.recent_messages_kept
+            chat_id, limit=active_context_limit
         )
 
         for msg in recent_messages:
@@ -80,55 +86,78 @@ class ContextService:
         self.chat_repo.db = db
         self.message_repo.db = db
 
-        # Fetch all unsummarized in one query (avoids extra COUNT query)
-        all_unsummarized = await self.message_repo.get_unsummarized_by_chat(chat_id)
-
-        if len(all_unsummarized) <= self.settings.message_threshold:
+        unsummarized_count = await self.message_repo.count_unsummarized(chat_id)
+        if unsummarized_count <= self.settings.message_threshold:
             return
 
-        batch_to_summarize = all_unsummarized[: self.settings.summary_batch_size]
-
-        if not batch_to_summarize:
-            return
-
-        # Use JSON to safely encode user content — prevents prompt injection
-        formatted_messages = json.dumps(
-            [{"role": msg.role, "content": msg.content} for msg in batch_to_summarize],
-            ensure_ascii=False,
-            indent=2,
+        target_unsummarized = max(
+            self.settings.recent_messages_kept,
+            max(1, self.settings.message_threshold - self.settings.summary_batch_size + 1),
         )
-
-        summary_prompt = (
-            f"{SUMMARIZATION_PROMPT}\n\n"
-            f"Conversation (JSON format):\n{formatted_messages}"
-        )
-
-        try:
-            new_summary = await self.llm_service.completion(
-                [
-                    {"role": "system", "content": SUMMARIZER_ROLE_PROMPT},
-                    {"role": "user", "content": summary_prompt},
-                ],
-                temperature=TEMPERATURE_SUMMARIZATION,
+        while unsummarized_count > target_unsummarized:
+            batch_limit = min(
+                self.settings.summary_batch_size,
+                unsummarized_count - target_unsummarized,
             )
-        except Exception as e:
-            logger.error("Summarization failed for chat %s: %s", chat_id, e)
-            return
+            batch_to_summarize = await self.message_repo.get_oldest_unsummarized(
+                chat_id,
+                limit=batch_limit,
+            )
+            if not batch_to_summarize:
+                return
 
-        chat = await self.chat_repo.get_by_id(chat_id)
-        if not chat:
-            return
+            # Use JSON to safely encode user content — prevents prompt injection
+            formatted_messages = json.dumps(
+                [{"role": msg.role, "content": msg.content} for msg in batch_to_summarize],
+                ensure_ascii=False,
+                indent=2,
+            )
 
-        if chat.summary:
-            combined_summary = f"{chat.summary}{SUMMARY_LATER_LABEL}{new_summary}"
-        else:
-            combined_summary = new_summary
+            summary_prompt = (
+                f"{SUMMARIZATION_PROMPT}\n\n"
+                f"Conversation (JSON format):\n{formatted_messages}"
+            )
 
-        # Keep the beginning of the summary (most established context), not the end
-        if len(combined_summary) > MAX_SUMMARY_LENGTH:
-            combined_summary = combined_summary[:MAX_SUMMARY_LENGTH]
+            try:
+                new_summary = await self.llm_service.completion(
+                    [
+                        {"role": "system", "content": SUMMARIZER_ROLE_PROMPT},
+                        {"role": "user", "content": summary_prompt},
+                    ],
+                    temperature=TEMPERATURE_SUMMARIZATION,
+                )
+            except Exception as e:
+                logger.error("Summarization failed for chat %s: %s", chat_id, e)
+                return
 
-        await self.chat_repo.update(chat_id, summary=combined_summary)
+            chat = await self.chat_repo.get_by_id(chat_id)
+            if not chat:
+                return
 
-        message_ids = [msg.id for msg in batch_to_summarize]
-        await self.message_repo.mark_as_summarized(message_ids)
+            if chat.summary:
+                combined_summary = f"{chat.summary}{SUMMARY_LATER_LABEL}{new_summary}"
+            else:
+                combined_summary = new_summary
+
+            # Keep the beginning of the summary (most established context), not the end
+            if len(combined_summary) > MAX_SUMMARY_LENGTH:
+                combined_summary = combined_summary[:MAX_SUMMARY_LENGTH]
+
+            message_ids = [msg.id for msg in batch_to_summarize]
+
+            try:
+                await self.chat_repo.update(
+                    chat_id,
+                    summary=combined_summary,
+                    commit=False,
+                )
+                await self.message_repo.mark_as_summarized(
+                    message_ids,
+                    commit=False,
+                )
+                await db.commit()
+            except Exception:
+                await db.rollback()
+                raise
+
+            unsummarized_count -= len(batch_to_summarize)
