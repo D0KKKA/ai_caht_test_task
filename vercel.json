@@ -3,11 +3,11 @@
   "rewrites": [
     {
       "source": "/_backend/:path*",
-      "destination": "/backend/main.py"
+      "destination": "/backend/app/main.py"
     }
   ],
   "functions": {
-    "backend/main.py": {
+    "backend/app/main.py": {
       "runtime": "vercel-python@0.1.0"
     }
   }
