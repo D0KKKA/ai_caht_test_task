@@ -1,434 +1,259 @@
-# AI Chat Application
+# AI Chat Task
 
-A full-stack web application for chatting with AI models via OpenRouter API, featuring real-time streaming responses, automatic message summarization for long conversations, and per-user chat history management.
+Полноценное full-stack приложение для диалога с LLM через OpenRouter. Проект состоит из трех частей:
 
-## Architecture Overview
+- `frontend/` — пользовательский интерфейс на Next.js;
+- `backend/` — API, бизнес-логика и работа с контекстом на FastAPI;
+- `docker-compose.yml` + `Makefile` — инфраструктура локального запуска и ежедневного управления сервисами.
 
-### Stack
-- **Frontend**: Next.js 16 (App Router), React, TypeScript, Tailwind CSS, Zustand, TanStack Query
-- **Backend**: FastAPI (Python 3.12), SQLAlchemy, Alembic, PostgreSQL
-- **LLM**: OpenRouter API (free models: `google/gemma-3-27b-it:free`)
-- **Infrastructure**: Docker + Docker Compose
+Этот README описывает не только запуск, но и объясняет, почему система устроена именно так.
 
-### Key Features
-✅ Real-time SSE streaming for AI responses  
-✅ Automatic context summarization for long conversations (>30 messages)  
-✅ Per-user chat history with anonymous client IDs (no authentication)  
-✅ Auto-generated chat titles from first message  
-✅ Markdown rendering with syntax highlighting  
-✅ Dark/light theme support  
-✅ Fully responsive UI  
+## Что решает этот проект
 
-## Quick Start
+Приложение должно было закрыть несколько задач одновременно:
 
-### Prerequisites
-- Docker & Docker Compose OR
-- Node.js 20+, Python 3.12+, PostgreSQL 16
+- вести историю чатов без обязательной регистрации пользователя;
+- отдавать ответ модели потоково, а не ждать целиком готовый текст;
+- не терять качество ответа на длинных диалогах;
+- оставаться простым в локальной разработке и понятным при проверке кода.
 
-### Option 1: Docker (Recommended)
+Отсюда и выросла текущая архитектура.
 
-```bash
-# Clone and enter project
-cd ai_chat_task
+## Почему выбрана именно такая архитектура
 
-# Create backend env for Docker Compose
-cp backend/.env.example backend/.env
-# Edit backend/.env and set at least OPENROUTER_API_KEY
-# For Docker Compose keep POSTGRES_HOST=postgres and BACKEND_URL=http://backend:8000
+### Монорепозиторий
 
-# Start all services
-docker compose up
+Backend, frontend и инфраструктура лежат в одном репозитории, потому что проект тесно связан по контрактам:
 
-# Access:
-# Frontend: http://localhost:3000
-# Backend API: http://localhost:8000/docs (Swagger UI)
-```
+- frontend зависит от shape API и streaming-формата;
+- backend зависит от конкретного сценария UI и таймингов стрима;
+- инфраструктура должна запускать обе части одним набором команд.
 
-### Option 2: Local Development
+Для такой задачи монорепозиторий проще, чем разнос по разным репозиториям с отдельной синхронизацией версий.
 
-#### Backend Setup
-```bash
-cd backend
+### Разделение на frontend и backend
 
-# Install dependencies
-pip install -r requirements.txt
+Хотя проект относительно компактный, backend и frontend разделены физически, потому что у них разный жизненный цикл:
 
-# Set up environment
-cp .env.example .env
-# Edit .env with your OpenRouter API key and PostgreSQL credentials
-# For local backend runs set POSTGRES_HOST=localhost
+- backend отвечает за данные, LLM orchestration и устойчивость;
+- frontend отвечает за UX, optimistic updates и потоковое отображение;
+- это разные типы сложности и разные точки отказа.
 
-# Run migrations
-alembic upgrade head
+Такое разделение дает более чистую модель, чем попытка собрать все в один Next.js-only проект.
 
-# Start server
-uvicorn app.main:app --reload
-```
+### BFF + API
 
-#### Frontend Setup
-```bash
-cd frontend
+Во frontend используется route handler `app/api/v1/[...path]/route.ts`, который работает как BFF-переходник к backend.
 
-# Optional: configure backend target for the internal BFF route
-cat > .env.local << EOF
-BACKEND_URL=http://localhost:8000
-EOF
+Это решение выбрано потому что:
 
-# Install dependencies
-npm install
+- браузер работает с same-origin API;
+- backend origin можно менять через env, не трогая клиентский код;
+- проще проксировать `X-Client-Id` и системные заголовки;
+- уменьшается количество CORS-проблем и сетевой связанности.
 
-# Start dev server
-npm run dev
+### Потоковый ответ через SSE
 
-# Access: http://localhost:3000
-```
+Ответ модели передается через SSE, а не через WebSocket.
 
-## Environment Variables
+Причина простая: трафик здесь односторонний. Клиент отправляет один HTTP-запрос и получает поток токенов назад. Для этого SSE проще:
 
-### Backend (.env)
-```
-OPENROUTER_API_KEY=sk-your-key-here
-OPENROUTER_API_URL=https://openrouter.ai/api/v1/chat/completions
-POSTGRES_HOST=localhost
-POSTGRES_PORT=5432
-POSTGRES_DB=ai_chat_db
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=1234
-MODEL_NAME=openai/gpt-oss-20b:free
-MESSAGE_THRESHOLD=30
-RECENT_MESSAGES_KEPT=20
-SUMMARY_BATCH_SIZE=10
-ALLOWED_ORIGINS=["http://localhost:3000","http://localhost:5173"]
-RATE_LIMIT=60/minute
-BACKEND_URL=http://localhost:8000
-```
+- меньше инфраструктурной сложности;
+- стандартный HTTP lifecycle;
+- проще логировать и воспроизводить;
+- достаточно для UX “печатания ответа”.
 
-### Key Configuration
-- `POSTGRES_HOST`: Use `postgres` in Docker Compose and `localhost` for local backend runs
-- `POSTGRES_PORT`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`: Discrete PostgreSQL connection settings used by both the app and Alembic
-- `MESSAGE_THRESHOLD`: Trigger summarization after N unsummarized messages
-- `RECENT_MESSAGES_KEPT`: Number of recent messages always sent to LLM
-- `SUMMARY_BATCH_SIZE`: Number of oldest messages to summarize at once
+### Суммаризация старых сообщений внутри backend
 
-### Frontend (.env.local)
-```
-BACKEND_URL=http://localhost:8000
-```
+Длинные диалоги обрабатываются не за счет безлимитного контекста, а через controlled summarization:
 
-- `BACKEND_URL`: Server-side target used by Next.js route handlers to proxy `/api/v1/*` to FastAPI.
-- In Docker Compose, the frontend reads `BACKEND_URL=http://backend:8000` from `backend/.env`.
+- старые сообщения агрегируются в summary;
+- последние сообщения остаются в живом контексте;
+- backend сам решает, когда запускать суммаризацию и сколько сообщений сворачивать.
 
-## Project Structure
+Это дешевле и проще, чем вводить vector store или отдельный memory-service для проекта такого масштаба.
 
-```
+## Почему выбран именно этот стек
+
+### Frontend
+
+- `Next.js 16` — routing, BFF route handlers, единая среда для dev и deploy.
+- `React 19` — зрелая модель UI и экосистема под потоковые интерфейсы.
+- `TanStack Query` — серверный state, кеш чатов и сообщений, optimistic updates.
+- `Zustand` — компактный store для ephemeral streaming-state.
+- `Tailwind CSS` — быстрый UI-слой без тяжелой собственной design-system инфраструктуры.
+
+Причина выбора: frontend здесь должен быть быстрым в разработке, предсказуемым в навигации и хорошо переносить частые обновления состояния во время стрима.
+
+### Backend
+
+- `FastAPI` — асинхронный HTTP-слой, удобная DI-модель, OpenAPI из коробки.
+- `SQLAlchemy Async` — работа с PostgreSQL без разрыва с async-пайплайном.
+- `Alembic` — контроль схемы и воспроизводимые миграции.
+- `PostgreSQL` — надежное хранение чатов и сообщений с транзакциями и индексами.
+- `OpenRouter` — единая точка доступа к моделям без привязки к одному провайдеру.
+
+Причина выбора: backend должен устойчиво обслуживать стриминг, хранить историю и содержать прозрачную бизнес-логику без лишней платформенной сложности.
+
+### Infrastructure
+
+- `Docker Compose` — локальный orchestration для `postgres`, `backend`, `frontend`.
+- `.env`-конфигурация — единый источник переменных для compose и backend.
+- `Makefile` — короткие операционные команды без необходимости помнить длинные compose-вызовы.
+
+Причина выбора: у проекта должен быть низкий порог запуска и повторяемый dev workflow.
+
+## Структура репозитория
+
+```text
 ai_chat_task/
-├── backend/
-│   ├── app/
-│   │   ├── main.py                 # FastAPI factory
-│   │   ├── api/v1/
-│   │   │   ├── chats.py            # Chat CRUD endpoints
-│   │   │   └── messages.py         # Message + SSE streaming
-│   │   ├── services/
-│   │   │   ├── llm_service.py      # OpenRouter client
-│   │   │   ├── context_service.py  # Summarization logic
-│   │   │   ├── chat_service.py     # Chat business logic
-│   │   │   └── message_service.py  # Message orchestration
-│   │   ├── repositories/           # Data access layer
-│   │   ├── models/                 # SQLAlchemy ORM models
-│   │   ├── schemas/                # Pydantic request/response
-│   │   └── core/
-│   │       ├── config.py           # Settings
-│   │       ├── database.py         # AsyncSession setup
-│   │       └── dependencies.py     # Dependency injection
-│   ├── alembic/                    # Database migrations
-│   └── requirements.txt
-│
-├── frontend/
-│   ├── app/
-│   │   ├── api/v1/[...path]/route.ts  # BFF proxy to FastAPI
-│   │   ├── layout.tsx                 # Root layout + providers
-│   │   ├── page.tsx                   # Root redirect
-│   │   └── chat/
-│   │       ├── page.tsx               # New chat page
-│   │       └── [id]/page.tsx          # Chat view
-│   ├── src/
-│   │   ├── widgets/
-│   │   │   ├── sidebar/            # Chat navigation
-│   │   │   └── chat-area/          # Main chat interface
-│   │   ├── features/
-│   │   │   └── send-message/       # Message sending + streaming
-│   │   ├── entities/
-│   │   │   ├── chat/               # Chat models, API, UI
-│   │   │   └── message/            # Message models, API, UI
-│   │   └── shared/
-│   │       ├── api/                # HTTP client
-│   │       ├── lib/                # Utilities
-│   │       ├── ui/                 # Shared components
-│   │       └── providers/          # React providers
-│   └── package.json
-│
-└── docker-compose.yml
+├── backend/              # FastAPI API, domain logic, DB, migrations
+├── frontend/             # Next.js UI, BFF proxy, streaming client
+├── docker-compose.yml    # Local infrastructure
+├── Makefile              # Day-to-day project commands
+└── README.md             # System overview and architecture rationale
 ```
 
-## API Endpoints
+## Документация по частям системы
 
-All endpoints require `X-Client-Id: <uuid>` header for data isolation.
+- [backend/README.md](backend/README.md) — зачем backend устроен через `api / services / repositories`, почему FastAPI, PostgreSQL, Alembic и SSE.
+- [frontend/README.md](frontend/README.md) — зачем нужен BFF, почему state разделен между TanStack Query и Zustand, почему структура `shared / entities / features / widgets`.
 
-```
-GET    /api/v1/chats                    List user's chats
-POST   /api/v1/chats                    Create new chat
-GET    /api/v1/chats/{id}               Get single chat
-DELETE /api/v1/chats/{id}               Delete chat
+## Поток запроса: от ввода до сохранения ответа
 
-GET    /api/v1/chats/{id}/messages      Get chat messages
-POST   /api/v1/chats/{id}/messages      Send message (SSE stream)
-```
+Ниже — основной runtime flow:
 
-### Example: Send Message with cURL
+1. Пользователь вводит сообщение во frontend.
+2. Если это новый диалог, создается чат и frontend переходит на `/chat/{id}`.
+3. Frontend кладет user message и пустой assistant message в cache optimistically.
+4. Frontend отправляет POST на backend и начинает читать SSE stream.
+5. Backend записывает user message в PostgreSQL.
+6. Backend собирает контекст: system prompt + summary + актуальные сообщения.
+7. Backend вызывает LLM и отдает chunk-ответы клиенту по мере генерации.
+8. После завершения потока backend сохраняет итоговый assistant message.
+9. Затем backend отдельно запускает post-stream задачи:
+   title generation для первого сообщения;
+   summarization, если диалог стал слишком длинным.
+
+Такой пайплайн выбран потому что он балансирует UX и надежность:
+
+- пользователь быстро видит начало ответа;
+- база остается источником истины;
+- постобработка не тормозит streaming.
+
+## Почему приняты именно такие ключевые решения
+
+### Анонимный `X-Client-Id`, а не полноценная auth-система
+
+На текущем этапе задача — чат, а не identity-platform. Поэтому выбран анонимный UUID в заголовке:
+
+- это достаточно для изоляции данных по пользователю;
+- не надо тянуть регистрацию, JWT, refresh flow и UI вокруг этого;
+- проект остается сфокусированным на LLM-сценарии.
+- проект все еще можно масштабировать и подключить полноценную авторизацию без сильных изменений в коде или архитектуре БД
+
+Минус очевиден: это не production-grade auth. Но для текущей постановки это правильный компромисс.
+
+### Title generation после первого сообщения
+
+Название чата генерируется асинхронно и только после первого сообщения, потому что:
+
+- до первого сообщения у чата нет смысла;
+- не нужно просить пользователя называть чат руками;
+- генерация названия не влияет на first-token latency.
+
+
+## Быстрый старт
+
+### Через Docker
 
 ```bash
-export CLIENT_ID=$(uuidgen)
-
-curl -X POST http://localhost:8000/api/v1/chats/123/messages \
-  -H "X-Client-Id: $CLIENT_ID" \
-  -H "Content-Type: application/json" \
-  -d '{"content": "What is the capital of France?"}' \
-  -N
+make env-init
+make docker-up-build
 ```
 
-Response (Server-Sent Events):
-```
-data: {"type": "delta", "content": "The"}
-data: {"type": "delta", "content": " capital"}
-data: {"type": "done", "message_id": "uuid", "content": "The capital of France is Paris."}
-```
+После запуска:
 
-## Context Management
+- frontend: `http://localhost:3000`
+- backend docs: `http://localhost:8000/docs`
+- backend health: `http://localhost:8000/health`
 
-The system automatically manages LLM context window to prevent token overflow:
+### Локально
 
-### Summarization Strategy
-1. **Trigger**: When unsummarized messages > `MESSAGE_THRESHOLD` (default: 30)
-2. **Batch**: Summarize oldest `SUMMARY_BATCH_SIZE` messages (default: 10)
-3. **Preserve**: Keep last `RECENT_MESSAGES_KEPT` messages (default: 20) in active context
-4. **Storage**: Accumulated summaries stored in `chats.summary` field
-
-### Flow
-```
-[Active Messages] (recent N messages)
-        ↓
-[Summary] (from older messages)
-        ↓
-[System Prompt]
-        ↓
-[LLM Request]
-```
-
-## Database Schema
-
-### chats
-- `id` (UUID): Primary key
-- `client_id` (UUID): Anonymous user identifier (indexed)
-- `title` (VARCHAR 255, nullable): Chat title (null = auto-generating)
-- `created_at`, `updated_at` (DATETIME)
-- `summary` (TEXT, nullable): Accumulated message summaries
-- `message_count` (INTEGER): Denormalized count
-
-### messages
-- `id` (UUID): Primary key
-- `chat_id` (UUID FK): Reference to chat
-- `role` (VARCHAR 20): "user" or "assistant"
-- `content` (TEXT): Message body
-- `created_at` (DATETIME)
-- `is_summarized` (BOOLEAN): False = active context, True = included in summary
-
-## Frontend Architecture
-
-### Technology Stack
-- **State Management**:
-  - Zustand: ephemeral streaming state
-  - TanStack Query: server state, optimistic message updates, cache invalidation
-- **Networking**: same-origin `/api/v1/*` requests proxied by a Next.js route handler to FastAPI
-- **Styling**: Tailwind CSS + dark mode via next-themes
-- **Code Organization**: Feature-Sliced Design (FSD)
-
-### Component Hierarchy
-```
-RootLayout (providers)
-├── page.tsx (redirect logic)
-└── chat/
-    ├── page.tsx (new chat)
-    └── [id]/page.tsx
-        ├── Sidebar
-        │   ├── ChatListItem[]
-        │   └── ThemeToggle
-        └── ChatArea
-            ├── MessageFeed
-            │   ├── MessageBubble[]
-            │   └── StreamingCursor
-            └── MessageInput
-```
-
-### Data Flow
-1. User types message → MessageInput
-2. React Query writes optimistic user/assistant placeholders into the chat cache
-3. Client opens an SSE request to `/api/v1/chats/{id}/messages`
-4. Next.js proxies the request to FastAPI via `BACKEND_URL`
-5. Stream chunks update the optimistic assistant message in cache
-6. On completion, chats/messages queries are invalidated and reconciled with server data
-
-## Getting an OpenRouter API Key
-
-1. Visit https://openrouter.ai/
-2. Sign up with email or OAuth
-3. Go to Keys page and create new key
-4. Copy the key and paste into `.env`
-
-Free tier includes access to many models including `google/gemma-3-27b-it:free`
-
-## Testing
-
-### Manual E2E Flow
+Backend:
 
 ```bash
-# 1. Start services
-docker compose up
-
-# 2. Create chat
-curl -X POST http://localhost:8000/api/v1/chats \
-  -H "X-Client-Id: $(uuidgen)" \
-  -H "Content-Type: application/json" \
-  -d '{}'
-
-# 3. Send message (note: -N flag enables streaming)
-curl -X POST http://localhost:8000/api/v1/chats/{chat_id}/messages \
-  -H "X-Client-Id: {client_id}" \
-  -H "Content-Type: application/json" \
-  -d '{"content": "Hello!"}' \
-  -N
-
-# 4. Visit http://localhost:3000 in browser
+make env-init
+# В backend/.env для локального запуска укажи POSTGRES_HOST=localhost
+make backend-install
+make backend-migrate
+make backend-dev
 ```
 
-## Development
+Frontend:
 
-### Common Commands
-
-**Backend**:
 ```bash
-cd backend
-
-# Run in dev mode with auto-reload
-uvicorn app.main:app --reload
-
-# Create migration
-alembic revision --autogenerate -m "description"
-
-# Apply migrations
-alembic upgrade head
-
-# Check migrations status
-alembic current
-
-# Run tests (if added)
-pytest
+make frontend-env-init
+make frontend-install
+make frontend-dev
 ```
 
-**Frontend**:
-```bash
-cd frontend
+## Makefile
 
-# Start dev server
-npm run dev
+В репозитории есть корневой `Makefile`, чтобы не держать в голове длинные команды.
 
-# Build for production
-npm run build
+Основные цели:
 
-# Start production server
-npm start
+- `make help` — показать все доступные команды;
+- `make env-init` — подготовить `backend/.env`;
+- `make frontend-env-init` — подготовить `frontend/.env.local`;
+- `make docker-up-build` — собрать и поднять весь стек;
+- `make docker-down` — остановить стек;
+- `make docker-logs-backend` — смотреть логи backend;
+- `make docker-db-cli` — зайти в `psql` внутри контейнера;
+- `make docker-migrate` — применить миграции внутри backend-контейнера;
+- `make backend-dev` — запустить FastAPI локально;
+- `make frontend-dev` — запустить Next.js локально;
+- `make backend-test` — прогнать backend unit tests;
+- `make frontend-lint` — прогнать lint фронтенда.
 
-# Lint and format
-npm run lint
-npm run format
-```
+## Конфигурация окружения
 
-## Known Limitations
+Главный файл окружения для backend и Docker Compose — `backend/.env`.
 
-- Anonymous users (no login required, but no data persistence across devices)
-- Single LLM model at a time (could add model selection)
-- No file upload support
-- Context summarization is rule-based (not ML-based)
-- No real-time collaboration (single user per chat)
+Ключевые переменные:
 
-## Future Enhancements
+- `OPENROUTER_API_KEY` — ключ доступа к LLM.
+- `POSTGRES_HOST` — `postgres` для Docker, `localhost` для локального backend.
+- `POSTGRES_PORT` — порт PostgreSQL.
+- `POSTGRES_DB` — имя базы.
+- `POSTGRES_USER` — пользователь БД.
+- `POSTGRES_PASSWORD` — пароль БД.
+- `MODEL_NAME` — выбранная модель OpenRouter.
+- `MESSAGE_THRESHOLD` — порог для запуска суммаризации.
+- `RECENT_MESSAGES_KEPT` — сколько последних сообщений всегда оставлять живыми.
+- `SUMMARY_BATCH_SIZE` — размер одного summarization batch.
+- `BACKEND_URL` — upstream для frontend BFF.
 
-- [ ] User authentication and persistence
-- [ ] Multiple model selection
-- [ ] File upload + RAG capabilities
-- [ ] Conversation branching/forking
-- [ ] Export conversations (PDF, Markdown)
-- [ ] Custom system prompts
-- [ ] Rate limiting per user
-- [ ] Admin dashboard
+## Что в проекте сделано сознательно просто
 
-## Troubleshooting
+Некоторые вещи не усложнялись специально:
 
-### Backend won't start
-```bash
-# Check PostgreSQL is running
-docker ps | grep postgres
+- нет Redis и отдельной очереди;
+- нет WebSocket-сервера;
+- нет полноценной auth-системы;
+- нет vector database;
+- нет отдельной design system библиотеки.
 
-# Check migrations
-alembic current
-alembic upgrade head
+Это не упущения, а осознанные ограничения масштаба. Проект решает конкретную задачу и избегает преждевременной платформенной сложности.
 
-# Check logs
-docker compose logs backend
-```
+## Куда проект можно развивать дальше
 
-### Frontend can't connect to backend
-- Ensure backend is running: `curl http://localhost:8000/health`
-- Check CORS headers in browser console
-- Verify `X-Client-Id` header is being sent
-- Check API client URL in `shared/api/client.ts`
+- полноценная аутентификация и multi-device сессии;
+- асинхронная очередь для post-stream задач;
+- observability: tracing, metrics, structured logging;
+- более явная политика retries и circuit breaking для LLM;
+- покрытие e2e-тестами frontend streaming-сценариев;
+- разделение runtime env для local/dev/stage/prod.
 
-### Messages not streaming
-- Check browser DevTools > Network tab for SSE stream
-- Verify OpenRouter API key is valid
-- Check backend logs for LLM service errors
-
-### Database errors
-```bash
-# Reset database (dev only!)
-docker compose down -v
-docker compose up
-
-# Or manually:
-alembic downgrade base  # Remove all migrations
-alembic upgrade head    # Reapply from scratch
-```
-
-## Architecture Decisions
-
-### Why Zustand + React Query?
-- **Zustand**: Minimal, performant UI state for streaming/real-time updates
-- **React Query**: Automatic cache management, refetch logic, offline support
-
-### Why PostgreSQL instead of SQLite?
-- Better support for async operations with asyncpg
-- UUID type support out of the box
-- Better for production deployments
-
-### Why SSE instead of WebSockets?
-- Simpler to implement and test
-- Sufficient for one-way server→client streaming
-- No connection state management needed
-
-### Why Anonymous Users?
-- Lower friction to use (no signup)
-- Suitable for demo/prototype
-- Easy to add auth layer later
-
-## License
-
-MIT (or as specified in project requirements)
+Текущая версия уже хорошо подходит как техническое задание, pet-проект с сильной архитектурной аргументацией и база для дальнейшего роста.

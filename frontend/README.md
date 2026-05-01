@@ -1,36 +1,127 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Frontend
 
-## Getting Started
+`frontend/` отвечает за пользовательский интерфейс, навигацию по чатам, optimistic updates и прием потокового ответа модели.
 
-First, run the development server:
+## Зона ответственности
+
+- отображать список чатов и текущий диалог;
+- создавать новый чат и отправлять сообщения;
+- показывать streaming-ответ по мере прихода токенов;
+- управлять локальным UI-state: активный стрим, блокировка инпута, темы, уведомления;
+- проксировать вызовы backend через BFF-маршрут Next.js.
+
+## Почему выбрана такая архитектура
+
+### Next.js App Router
+
+Next.js выбран не только из-за React, а из-за комбинации нескольких практических преимуществ:
+
+- App Router дает удобную файловую маршрутизацию для чатов и нового диалога;
+- route handlers позволяют сделать BFF-слой без отдельного frontend-сервера;
+- одинаковая среда подходит и для локальной разработки, и для Docker, и для будущего деплоя.
+
+### BFF route внутри `app/api/v1/[...path]/route.ts`
+
+Это важное решение, а не просто proxy “для удобства”.
+
+- frontend не привязан напрямую к внешнему адресу backend;
+- можно централизованно пробрасывать `X-Client-Id` и cookies;
+- браузер работает с same-origin `/api/v1/*`, что уменьшает CORS-трение;
+- меняется backend origin, но не меняется код клиентских вызовов.
+
+### TanStack Query для server state
+
+История чатов и сообщения — это server state, а не обычный React state. Поэтому выбран TanStack Query:
+
+- кеш по ключам `["chats"]` и `["chats", chatId, "messages"]`;
+- удобная инвалидaция после мутаций;
+- поддержка optimistic updates для сообщений;
+- контроль повторных запросов и фоновых refetch.
+
+### Zustand для streaming state
+
+Потоковое состояние хранится отдельно от Query Cache, потому что это другой тип данных:
+
+- это эпhemeral state, завязанный на `AbortController` и текущую сессию стрима;
+- им пользуются несколько участков интерфейса;
+- это не данные backend, а управляющее состояние UI.
+
+Именно поэтому чаты и сообщения лежат в TanStack Query, а `isStreaming`, `streamingChatId`, `abortController` — в Zustand.
+
+### Feature-Sliced-подобная структура
+
+Структура `shared / entities / features / widgets` выбрана для отделения уровней ответственности:
+
+- `shared/` — инфраструктурные вещи и базовые UI-компоненты;
+- `entities/` — модели и UI вокруг доменных сущностей `chat` и `message`;
+- `features/` — конкретные сценарии пользователя, например отправка сообщения;
+- `widgets/` — крупные блоки страницы, например sidebar и chat area.
+
+Это делает код предсказуемее, чем структура “все компоненты в одной папке”.
+
+### Tailwind CSS
+
+Tailwind выбран из прагматических причин:
+
+- высокая скорость сборки интерфейсов;
+- проще поддерживать единый визуальный язык;
+- удобнее локализовать стили рядом с компонентом, не плодя отдельные CSS-модули на каждую мелочь.
+
+## Основные модули
+
+- `app/chat/page.tsx` — экран нового чата.
+- `app/chat/[id]/page.tsx` — экран конкретного диалога.
+- `app/api/v1/[...path]/route.ts` — BFF proxy до backend.
+- `src/widgets/sidebar/` — список чатов и кнопка создания.
+- `src/widgets/chat-area/` — фид сообщений и зона отправки.
+- `src/features/send-message/` — отправка сообщения, стриминг, регенерация.
+- `src/entities/message/` — модели, feed, message bubbles, streaming cursor.
+- `src/shared/providers/` — ThemeProvider, QueryClientProvider, client bootstrap.
+
+## Почему первый ответ показывается optimistically
+
+Проект сознательно делает optimistic update до завершения ответа модели:
+
+- пользователь сразу видит свое сообщение;
+- рядом сразу появляется контейнер под ответ ассистента;
+- streaming воспринимается как непрерывный диалог, а не как “заморозка до готового ответа”.
+
+Для этого в `useSendMessage` и `useMessageStreamExecutor` сообщение пользователя и пустой assistant message сначала кладутся в cache, а потом assistant message постепенно заполняется chunk-ами SSE.
+
+## Почему новый чат создается до фактической отправки сообщения
+
+Маршрут `/chat` нужен как отдельное состояние интерфейса. Поэтому новый чат создается явно:
+
+- сначала пользователь находится на пустом welcome-экране;
+- при первом сообщении backend создает запись чата;
+- после этого frontend переходит на `/chat/{id}` и продолжает работу уже с реальным chat id.
+
+Такой подход упрощает URL-модель и навигацию по истории.
+
+## Локальный запуск
 
 ```bash
+cd frontend
+printf 'BACKEND_URL=http://localhost:8000\n' > .env.local
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Полезные команды
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Из корня репозитория:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+make frontend-env-init
+make frontend-install
+make frontend-dev
+make frontend-lint
+```
 
-## Learn More
+## Текущие trade-offs
 
-To learn more about Next.js, take a look at the following resources:
+- SSR для основного UI почти не используется, потому что интерфейс в первую очередь интерактивный;
+- Zustand используется только там, где Query уже неудобен;
+- стили завязаны на utility-подход, что ускоряет работу, но требует дисциплины в naming и композиции классов.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Для текущего масштаба проекта это рациональный баланс между скоростью разработки и поддерживаемостью.
