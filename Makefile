@@ -8,21 +8,23 @@ BACKEND_DIR := backend
 FRONTEND_DIR := frontend
 
 BACKEND_ENV := $(BACKEND_DIR)/.env
-FRONTEND_ENV_LOCAL := $(FRONTEND_DIR)/.env.local
+FRONTEND_ENV := $(FRONTEND_DIR)/.env
 MSG ?= new_migration
 
-.PHONY: help env-init frontend-env-init docker-build docker-up docker-up-build docker-down docker-restart docker-ps docker-logs docker-logs-backend docker-logs-frontend docker-logs-db docker-shell-backend docker-shell-db docker-db-cli docker-migrate docker-migration backend-install backend-dev backend-migrate backend-test frontend-install frontend-dev frontend-lint lint test health docker-clean
+.PHONY: help env-init backend-env-init frontend-env-init docker-build docker-up docker-up-build docker-down docker-restart docker-ps docker-logs docker-logs-backend docker-logs-frontend docker-logs-db docker-shell-backend docker-shell-db docker-db-cli docker-migrate docker-migration backend-install backend-dev backend-migrate backend-test frontend-install frontend-dev frontend-lint lint test health docker-clean
 
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*## "}; /^[a-zA-Z0-9_.-]+:.*## / {printf "%-22s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-env-init: ## Create backend/.env from backend/.env.example if it does not exist
+env-init: backend-env-init frontend-env-init ## Create backend/.env and frontend/.env from their examples
+
+backend-env-init: ## Create backend/.env from backend/.env.example if it does not exist
 	@test -f $(BACKEND_ENV) || cp $(BACKEND_DIR)/.env.example $(BACKEND_ENV)
 	@printf "backend env ready: %s\n" "$(BACKEND_ENV)"
 
-frontend-env-init: ## Create frontend/.env.local for local frontend-to-backend proxy
-	@test -f $(FRONTEND_ENV_LOCAL) || printf 'BACKEND_URL=http://localhost:8000\n' > $(FRONTEND_ENV_LOCAL)
-	@printf "frontend env ready: %s\n" "$(FRONTEND_ENV_LOCAL)"
+frontend-env-init: ## Create frontend/.env from frontend/.env.example if it does not exist
+	@test -f $(FRONTEND_ENV) || cp $(FRONTEND_DIR)/.env.example $(FRONTEND_ENV)
+	@printf "frontend env ready: %s\n" "$(FRONTEND_ENV)"
 
 docker-build: ## Build Docker images
 	$(COMPOSE) build

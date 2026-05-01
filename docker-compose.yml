@@ -39,7 +39,7 @@ services:
       dockerfile: Dockerfile
     container_name: ai_chat_frontend
     env_file:
-      - ./backend/.env
+      - ./frontend/.env
     ports:
       - "3000:3000"
     depends_on:

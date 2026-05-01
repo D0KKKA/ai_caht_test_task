@@ -102,10 +102,16 @@ Tailwind выбран из прагматических причин:
 
 ```bash
 cd frontend
-printf 'BACKEND_URL=http://localhost:8000\n' > .env.local
+cp .env.example .env
 npm install
 npm run dev
 ```
+
+Замечание по env:
+
+- `frontend/.env` — единственный env-файл frontend;
+- в локальном `npm run dev` он должен содержать `BACKEND_URL=http://localhost:8000`;
+- в Docker Compose то же значение из `frontend/.env` читается по тому же пути, но переопределяется на `http://backend:8000`, потому что внутри контейнера backend доступен по имени сервиса.
 
 ## Полезные команды
 
