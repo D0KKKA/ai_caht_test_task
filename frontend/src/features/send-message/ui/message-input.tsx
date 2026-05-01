@@ -34,6 +34,13 @@ export function MessageInput({
     }
   }, [content]);
 
+  // Refocus textarea after streaming ends
+  useEffect(() => {
+    if (!isStreaming) {
+      textareaRef.current?.focus();
+    }
+  }, [isStreaming]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!content.trim() || isStreaming) return;
@@ -56,7 +63,7 @@ export function MessageInput({
   const isDisabled = disabled || isStreaming || !content.trim();
 
   return (
-    <form onSubmit={handleSubmit} className="relative flex items-end gap-3 rounded-2xl border border-[var(--border-strong)] bg-[var(--bg-secondary)] px-4 py-3 shadow-[var(--shadow-md)] transition-all focus-within:border-[var(--accent)] focus-within:shadow-[0_0_0_3px_rgba(16,163,127,0.12),var(--shadow-md)]">
+    <form onSubmit={handleSubmit} className="flex items-center gap-3 rounded-2xl border border-[var(--border-strong)] bg-[var(--bg-secondary)] px-4 py-2.5 shadow-[var(--shadow-md)] transition-all focus-within:border-[var(--accent)] focus-within:shadow-[0_0_0_3px_rgba(16,163,127,0.12),var(--shadow-md)]">
       <textarea
         ref={textareaRef}
         value={content}
@@ -64,8 +71,9 @@ export function MessageInput({
         onKeyDown={handleKeyDown}
         disabled={disabled || isStreaming}
         placeholder="Напишите сообщение…"
-        className="flex-1 resize-none bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none disabled:opacity-50"
+        className="flex-1 resize-none bg-transparent py-1 text-sm leading-6 text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none disabled:opacity-50"
         rows={1}
+        style={{ maxHeight: "200px" }}
       />
       <button
         type="submit"

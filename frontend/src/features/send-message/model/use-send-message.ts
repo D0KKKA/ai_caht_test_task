@@ -88,9 +88,12 @@ export function useSendMessage(chatId: string) {
             useMessageStore.setState({ messages: [...messages] });
           }
 
-          // Invalidate chats and messages to refresh from server
-          queryClient.invalidateQueries({ queryKey: ["chats"] });
+          // Refresh messages from server
           queryClient.invalidateQueries({ queryKey: ["chats", chatId, "messages"] });
+          // Refresh chat list once immediately, then again after title generation delay
+          queryClient.invalidateQueries({ queryKey: ["chats"] });
+          setTimeout(() => queryClient.invalidateQueries({ queryKey: ["chats"] }), 3000);
+          setTimeout(() => queryClient.invalidateQueries({ queryKey: ["chats"] }), 6000);
         } else if (event.type === "error") {
           console.error("Stream error:", event.detail);
         }

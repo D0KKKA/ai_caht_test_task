@@ -16,6 +16,7 @@ export function useChats() {
       const response = await apiClient.get<Chat[]>("/chats");
       return response.data;
     },
+    refetchOnWindowFocus: false,
   });
 }
 

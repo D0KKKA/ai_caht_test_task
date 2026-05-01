@@ -42,9 +42,15 @@ export function ChatArea({ chatId }: ChatAreaProps) {
 
   // Во время стриминга показываем оптимистичные сообщения + серверные
   // После завершения — только серверные (localMessages уже очищены)
-  const displayMessages = isStreaming
+  const seen = new Set<string>();
+  const displayMessages = (isStreaming
     ? [...serverMessages, ...localMessages]
-    : serverMessages;
+    : serverMessages
+  ).filter((msg) => {
+    if (seen.has(msg.id)) return false;
+    seen.add(msg.id);
+    return true;
+  });
 
   return (
     <div className="flex flex-1 flex-col bg-[var(--bg-secondary)]">

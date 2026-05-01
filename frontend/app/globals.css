@@ -3,19 +3,19 @@
 @variant dark (&:where(.dark, .dark *));
 
 :root {
-  --bg-primary: #f7f7f8;
+  --bg-primary: #f0f0f0;
   --bg-secondary: #ffffff;
-  --bg-sidebar: #ececec;
-  --border: #d1d1d1;
-  --border-strong: #b8b8b8;
-  --text-primary: #0d0d0d;
-  --text-secondary: #5a5a5a;
-  --text-muted: #9a9a9a;
+  --bg-sidebar: #e2e2e2;
+  --border: #c4c4c4;
+  --border-strong: #a0a0a0;
+  --text-primary: #111111;
+  --text-secondary: #444444;
+  --text-muted: #888888;
   --accent: #10a37f;
   --accent-hover: #0e9370;
-  --user-msg-bg: #e8e8e8;
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.10);
-  --shadow-md: 0 2px 8px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.06);
+  --user-msg-bg: #dcdcdc;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.12);
+  --shadow-md: 0 2px 8px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.08);
 }
 
 .dark {
