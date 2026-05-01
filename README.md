@@ -31,15 +31,10 @@ A full-stack web application for chatting with AI models via OpenRouter API, fea
 # Clone and enter project
 cd ai_chat_task
 
-# Create .env with OpenRouter API key
-cat > backend/.env << EOF
-OPENROUTER_API_KEY=your_key_here
-DATABASE_URL=postgresql+asyncpg://postgres:1234@postgres:5432/ai_chat_db
-MODEL_NAME=google/gemma-3-27b-it:free
-MESSAGE_THRESHOLD=30
-RECENT_MESSAGES_KEPT=20
-SUMMARY_BATCH_SIZE=10
-EOF
+# Create backend env for Docker Compose
+cp backend/.env.example backend/.env
+# Edit backend/.env and set at least OPENROUTER_API_KEY
+# For Docker Compose keep POSTGRES_HOST=postgres and BACKEND_URL=http://backend:8000
 
 # Start all services
 docker compose up
@@ -61,6 +56,7 @@ pip install -r requirements.txt
 # Set up environment
 cp .env.example .env
 # Edit .env with your OpenRouter API key and PostgreSQL credentials
+# For local backend runs set POSTGRES_HOST=localhost
 
 # Run migrations
 alembic upgrade head
@@ -92,14 +88,24 @@ npm run dev
 ### Backend (.env)
 ```
 OPENROUTER_API_KEY=sk-your-key-here
-DATABASE_URL=postgresql+asyncpg://postgres:1234@localhost:5432/ai_chat_db
-MODEL_NAME=google/gemma-3-27b-it:free
+OPENROUTER_API_URL=https://openrouter.ai/api/v1/chat/completions
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DB=ai_chat_db
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=1234
+MODEL_NAME=openai/gpt-oss-20b:free
 MESSAGE_THRESHOLD=30
 RECENT_MESSAGES_KEPT=20
 SUMMARY_BATCH_SIZE=10
+ALLOWED_ORIGINS=["http://localhost:3000","http://localhost:5173"]
+RATE_LIMIT=60/minute
+BACKEND_URL=http://localhost:8000
 ```
 
 ### Key Configuration
+- `POSTGRES_HOST`: Use `postgres` in Docker Compose and `localhost` for local backend runs
+- `POSTGRES_PORT`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`: Discrete PostgreSQL connection settings used by both the app and Alembic
 - `MESSAGE_THRESHOLD`: Trigger summarization after N unsummarized messages
 - `RECENT_MESSAGES_KEPT`: Number of recent messages always sent to LLM
 - `SUMMARY_BATCH_SIZE`: Number of oldest messages to summarize at once
@@ -110,7 +116,7 @@ BACKEND_URL=http://localhost:8000
 ```
 
 - `BACKEND_URL`: Server-side target used by Next.js route handlers to proxy `/api/v1/*` to FastAPI.
-- In Docker, use `http://backend:8000`.
+- In Docker Compose, the frontend reads `BACKEND_URL=http://backend:8000` from `backend/.env`.
 
 ## Project Structure
 

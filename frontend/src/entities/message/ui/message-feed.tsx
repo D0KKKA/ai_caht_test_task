@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { EmptyChatState } from "@/shared/ui/empty-chat-state";
 import { Message } from "../model/types";
 import { MessageBubble } from "./message-bubble";
 
@@ -34,13 +35,7 @@ export function MessageFeed({
     <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto max-w-3xl px-6 py-8">
         {messages.length === 0 && !isStreaming ? (
-          <div className="flex h-[60vh] items-center justify-center">
-            <div className="text-center">
-              <div className="mb-4 text-4xl">✦</div>
-              <p className="text-lg font-medium text-[var(--text-primary)]">Чем могу помочь?</p>
-              <p className="mt-1 text-sm text-[var(--text-muted)]">Напишите сообщение, чтобы начать разговор</p>
-            </div>
-          </div>
+          <EmptyChatState />
         ) : (
           <div className="space-y-6">
             {messages.map((message) => (

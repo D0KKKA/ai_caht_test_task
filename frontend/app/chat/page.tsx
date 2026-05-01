@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useCreateChat } from "@/entities/chat/api/chat-api";
 import { MessageInput } from "@/features/send-message/ui/message-input";
 import { getPendingMessageStorageKey } from "@/shared/lib/pending-message";
+import { EmptyChatState } from "@/shared/ui/empty-chat-state";
 import { Sidebar } from "@/widgets/sidebar/ui/sidebar";
 
 export default function NewChatPage() {
@@ -17,19 +18,16 @@ export default function NewChatPage() {
   };
 
   return (
-    <div className="flex h-screen bg-white dark:bg-gray-950">
+    <div className="flex h-screen overflow-hidden bg-white dark:bg-gray-950">
       <Sidebar />
-      <div className="flex flex-1 flex-col items-center justify-center">
-        <div className="w-full max-w-2xl space-y-8 px-4">
-          <div className="text-center">
-            <h1 className="text-4xl font-bold text-gray-900 dark:text-white">
-              Welcome
-            </h1>
-            <p className="mt-2 text-gray-500 dark:text-gray-400">
-              Send a message to start a new conversation
-            </p>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--bg-secondary)]">
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-3xl px-6 py-8">
+            <EmptyChatState />
           </div>
-          <div className="w-full">
+        </div>
+        <div className="shrink-0 pb-6 pt-2">
+          <div className="mx-auto max-w-3xl px-6">
             <MessageInput
               chatId="new"
               onSendMessage={handleSendMessage}

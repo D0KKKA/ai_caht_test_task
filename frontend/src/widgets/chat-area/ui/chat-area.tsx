@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useMessages } from "@/entities/message/api/message-api";
 import { useMessageStore } from "@/entities/message/model/message-store";
@@ -16,8 +16,19 @@ interface ChatAreaProps {
   chatId: string;
 }
 
+function hasPendingMessage(chatId: string): boolean {
+  if (typeof window === "undefined" || !chatId) {
+    return false;
+  }
+
+  return Boolean(sessionStorage.getItem(getPendingMessageStorageKey(chatId)));
+}
+
 export function ChatArea({ chatId }: ChatAreaProps) {
-  const { data: messages = [] } = useMessages(chatId);
+  const [isMessagesQueryEnabled, setIsMessagesQueryEnabled] = useState(
+    () => !hasPendingMessage(chatId),
+  );
+  const { data: messages = [] } = useMessages(chatId, isMessagesQueryEnabled);
   const {
     isStreaming,
     streamingChatId,
@@ -67,23 +78,33 @@ export function ChatArea({ chatId }: ChatAreaProps) {
   );
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
+    let isActive = true;
 
-    if (attemptedPendingChatIds.current.has(chatId)) {
-      return;
+    if (typeof window === "undefined" || attemptedPendingChatIds.current.has(chatId)) {
+      return () => {
+        isActive = false;
+      };
     }
 
     const storageKey = getPendingMessageStorageKey(chatId);
     const pendingMessage = sessionStorage.getItem(storageKey);
 
     if (!pendingMessage) {
-      return;
+      return () => {
+        isActive = false;
+      };
     }
 
     attemptedPendingChatIds.current.add(chatId);
-    void attemptPendingMessage(pendingMessage, storageKey);
+    void attemptPendingMessage(pendingMessage, storageKey).finally(() => {
+      if (isActive) {
+        setIsMessagesQueryEnabled(true);
+      }
+    });
+
+    return () => {
+      isActive = false;
+    };
   }, [attemptPendingMessage, chatId]);
 
   useEffect(

@@ -21,6 +21,7 @@ export function MessageInput({
   const [content, setContent] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const shouldRestoreFocusRef = useRef(false);
   const isStreaming = useMessageStore(
     (state) => state.isStreaming && state.streamingChatId === chatId
   );
@@ -34,10 +35,17 @@ export function MessageInput({
   }, [content]);
 
   useEffect(() => {
-    if (!isStreaming) {
-      textareaRef.current?.focus();
+    if (!shouldRestoreFocusRef.current) {
+      return;
     }
-  }, [isStreaming]);
+
+    if (disabled || isStreaming || isSubmitting) {
+      return;
+    }
+
+    textareaRef.current?.focus();
+    shouldRestoreFocusRef.current = false;
+  }, [disabled, isStreaming, isSubmitting]);
 
   const submitMessage = async () => {
     if (!content.trim() || isStreaming || isSubmitting) {
@@ -53,6 +61,7 @@ export function MessageInput({
         await sendMessage(content);
       }
 
+      shouldRestoreFocusRef.current = true;
       setContent("");
     } catch (error) {
       toast.error(getErrorMessage(error));

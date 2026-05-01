@@ -1,19 +1,15 @@
-version: '3.9'
-
 services:
   postgres:
     image: postgres:16-alpine
     container_name: ai_chat_db
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: 1234
-      POSTGRES_DB: ai_chat_db
+    env_file:
+      - ./backend/.env
     ports:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -25,8 +21,6 @@ services:
     container_name: ai_chat_backend
     env_file:
       - ./backend/.env
-    environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:1234@postgres:5432/ai_chat_db
     ports:
       - "8000:8000"
     depends_on:
@@ -44,11 +38,10 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: ai_chat_frontend
+    env_file:
+      - ./backend/.env
     ports:
       - "3000:3000"
-    environment:
-      # Next.js route handlers proxy API requests to the backend container.
-      BACKEND_URL: http://backend:8000
     depends_on:
       backend:
         condition: service_healthy

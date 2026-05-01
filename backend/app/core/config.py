@@ -3,9 +3,30 @@
 from functools import lru_cache
 import json
 from typing import Annotated, Any
+from urllib.parse import quote
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, NoDecode
+
+
+def build_postgres_url(
+    *,
+    host: str,
+    port: int,
+    database: str,
+    user: str,
+    password: str,
+    driver: str,
+) -> str:
+    """Build a PostgreSQL DSN from discrete connection parameters."""
+    quoted_user = quote(user, safe="")
+    quoted_password = quote(password, safe="")
+    quoted_database = quote(database, safe="")
+
+    return (
+        f"postgresql+{driver}://{quoted_user}:{quoted_password}"
+        f"@{host}:{port}/{quoted_database}"
+    )
 
 
 class Settings(BaseSettings):
@@ -16,7 +37,11 @@ class Settings(BaseSettings):
     openrouter_api_url: str = "https://openrouter.ai/api/v1/chat/completions"
 
     # Database
-    database_url: str = "postgresql+asyncpg://postgres:1234@localhost:5432/ai_chat_db"
+    postgres_host: str = "localhost"
+    postgres_port: int = 5432
+    postgres_db: str = "ai_chat_db"
+    postgres_user: str = "postgres"
+    postgres_password: str = "1234"
 
     # CORS — comma-separated list of allowed origins (e.g. "http://localhost:3000,https://yourdomain.com")
     allowed_origins: Annotated[list[str], NoDecode] = [
@@ -28,7 +53,7 @@ class Settings(BaseSettings):
     rate_limit: str = "60/minute"
 
     # LLM Model
-    model_name: str = "google/gemma-3-27b-it:free"
+    model_name: str = "openai/gpt-oss-20b:free"
 
     # Database connection pool (ops-tunable)
     db_pool_size: int = 20
@@ -47,7 +72,32 @@ class Settings(BaseSettings):
         "protected_namespaces": ("settings_",),
         "env_file": ".env",
         "case_sensitive": False,
+        "extra": "ignore",
     }
+
+    @property
+    def database_url(self) -> str:
+        """Async SQLAlchemy database URL."""
+        return build_postgres_url(
+            host=self.postgres_host,
+            port=self.postgres_port,
+            database=self.postgres_db,
+            user=self.postgres_user,
+            password=self.postgres_password,
+            driver="asyncpg",
+        )
+
+    @property
+    def alembic_database_url(self) -> str:
+        """Sync database URL for Alembic migrations."""
+        return build_postgres_url(
+            host=self.postgres_host,
+            port=self.postgres_port,
+            database=self.postgres_db,
+            user=self.postgres_user,
+            password=self.postgres_password,
+            driver="psycopg2",
+        )
 
     @field_validator("allowed_origins", mode="before")
     @classmethod

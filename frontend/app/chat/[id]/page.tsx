@@ -11,7 +11,7 @@ export default function ChatPage() {
   return (
     <div className="flex h-screen overflow-hidden bg-white dark:bg-gray-950">
       <Sidebar />
-      <ChatArea chatId={chatId || ""} />
+      <ChatArea key={chatId || "empty"} chatId={chatId || ""} />
     </div>
   );
 }

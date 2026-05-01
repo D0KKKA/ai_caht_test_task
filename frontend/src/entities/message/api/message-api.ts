@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "@/shared/api/client";
 import { Message } from "../model/types";
 
-export function useMessages(chatId: string) {
+export function useMessages(chatId: string, enabled = true) {
   return useQuery({
     queryKey: ["chats", chatId, "messages"],
     queryFn: async ({ signal }) => {
@@ -12,6 +12,6 @@ export function useMessages(chatId: string) {
       );
       return response.data;
     },
-    enabled: !!chatId,
+    enabled: !!chatId && enabled,
   });
 }

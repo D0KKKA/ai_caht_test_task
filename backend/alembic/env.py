@@ -7,6 +7,7 @@ from sqlalchemy import pool
 from alembic import context
 
 # Import Base and models for autogenerate
+from app.core.config import build_postgres_url
 from app.core.database import Base
 from app.models.chat import Chat  # noqa: F401
 from app.models.message import Message  # noqa: F401
@@ -15,11 +16,30 @@ from app.models.message import Message  # noqa: F401
 # access to the values within the .ini file in use.
 config = context.config
 
-# Get DATABASE_URL from environment and convert asyncpg to psycopg2 for migrations
-database_url = os.getenv("DATABASE_URL", "")
-if database_url:
-    # Convert postgresql+asyncpg:// to postgresql:// for alembic
-    database_url = database_url.replace("postgresql+asyncpg://", "postgresql://")
+# Build SQLAlchemy URL from discrete PostgreSQL environment variables when available.
+postgres_host = os.getenv("POSTGRES_HOST")
+postgres_port = os.getenv("POSTGRES_PORT")
+postgres_db = os.getenv("POSTGRES_DB")
+postgres_user = os.getenv("POSTGRES_USER")
+postgres_password = os.getenv("POSTGRES_PASSWORD")
+
+if all(
+    [
+        postgres_host,
+        postgres_port,
+        postgres_db,
+        postgres_user,
+        postgres_password,
+    ]
+):
+    database_url = build_postgres_url(
+        host=postgres_host,
+        port=int(postgres_port),
+        database=postgres_db,
+        user=postgres_user,
+        password=postgres_password,
+        driver="psycopg2",
+    )
     config.set_main_option("sqlalchemy.url", database_url)
 
 # Interpret the config file for Python logging.
