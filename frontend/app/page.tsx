@@ -1,14 +1,8 @@
 "use client";
 
-/**
- * Root page - redirects to first chat or new chat
- */
-
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useChats } from "@/entities/chat/api/chat-api";
-
-export const dynamic = "force-dynamic";
 
 export default function Home() {
   const router = useRouter();
@@ -16,11 +10,10 @@ export default function Home() {
 
   useEffect(() => {
     if (!isLoading) {
-      // Redirect to first chat if exists, otherwise to new chat
       if (chats && chats.length > 0) {
-        router.push(`/chat/${chats[0].id}`);
+        router.replace(`/chat/${chats[0].id}`);
       } else {
-        router.push("/chat");
+        router.replace("/chat");
       }
     }
   }, [chats, isLoading, router]);

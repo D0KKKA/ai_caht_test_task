@@ -1,19 +1,17 @@
 "use client";
 
-/**
- * TanStack Query provider
- */
-
+import { useState, type ReactNode } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { queryClient } from "@/shared/lib/query-client";
+import { makeQueryClient } from "@/shared/lib/query-client";
 import { ClientInitializer } from "./client-initializer";
-import { ReactNode } from "react";
 
 interface QueryProviderProps {
   children: ReactNode;
 }
 
 export function QueryProvider({ children }: QueryProviderProps) {
+  const [queryClient] = useState(makeQueryClient);
+
   return (
     <QueryClientProvider client={queryClient}>
       <ClientInitializer />

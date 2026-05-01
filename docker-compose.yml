@@ -47,8 +47,8 @@ services:
     ports:
       - "3000:3000"
     environment:
-      # Next.js will use the backend service name for internal requests
-      NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
+      # Next.js route handlers proxy API requests to the backend container.
+      BACKEND_URL: http://backend:8000
     depends_on:
       backend:
         condition: service_healthy

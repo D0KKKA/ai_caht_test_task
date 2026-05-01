@@ -5,7 +5,7 @@ A full-stack web application for chatting with AI models via OpenRouter API, fea
 ## Architecture Overview
 
 ### Stack
-- **Frontend**: Next.js 14 (App Router), React, TypeScript, Tailwind CSS, Zustand, TanStack Query
+- **Frontend**: Next.js 16 (App Router), React, TypeScript, Tailwind CSS, Zustand, TanStack Query
 - **Backend**: FastAPI (Python 3.12), SQLAlchemy, Alembic, PostgreSQL
 - **LLM**: OpenRouter API (free models: `google/gemma-3-27b-it:free`)
 - **Infrastructure**: Docker + Docker Compose
@@ -73,6 +73,11 @@ uvicorn app.main:app --reload
 ```bash
 cd frontend
 
+# Optional: configure backend target for the internal BFF route
+cat > .env.local << EOF
+BACKEND_URL=http://localhost:8000
+EOF
+
 # Install dependencies
 npm install
 
@@ -98,6 +103,14 @@ SUMMARY_BATCH_SIZE=10
 - `MESSAGE_THRESHOLD`: Trigger summarization after N unsummarized messages
 - `RECENT_MESSAGES_KEPT`: Number of recent messages always sent to LLM
 - `SUMMARY_BATCH_SIZE`: Number of oldest messages to summarize at once
+
+### Frontend (.env.local)
+```
+BACKEND_URL=http://localhost:8000
+```
+
+- `BACKEND_URL`: Server-side target used by Next.js route handlers to proxy `/api/v1/*` to FastAPI.
+- In Docker, use `http://backend:8000`.
 
 ## Project Structure
 
@@ -125,13 +138,14 @@ ai_chat_task/
 │   └── requirements.txt
 │
 ├── frontend/
+│   ├── app/
+│   │   ├── api/v1/[...path]/route.ts  # BFF proxy to FastAPI
+│   │   ├── layout.tsx                 # Root layout + providers
+│   │   ├── page.tsx                   # Root redirect
+│   │   └── chat/
+│   │       ├── page.tsx               # New chat page
+│   │       └── [id]/page.tsx          # Chat view
 │   ├── src/
-│   │   ├── app/
-│   │   │   ├── layout.tsx          # Root layout + providers
-│   │   │   ├── page.tsx            # Root redirect
-│   │   │   └── chat/
-│   │   │       ├── page.tsx        # New chat page
-│   │   │       └── [id]/page.tsx   # Chat view
 │   │   ├── widgets/
 │   │   │   ├── sidebar/            # Chat navigation
 │   │   │   └── chat-area/          # Main chat interface
@@ -226,8 +240,9 @@ The system automatically manages LLM context window to prevent token overflow:
 
 ### Technology Stack
 - **State Management**:
-  - Zustand: UI state (messages, streaming, chat selection)
-  - TanStack Query: Server state (chats, messages, API caching)
+  - Zustand: ephemeral streaming state
+  - TanStack Query: server state, optimistic message updates, cache invalidation
+- **Networking**: same-origin `/api/v1/*` requests proxied by a Next.js route handler to FastAPI
 - **Styling**: Tailwind CSS + dark mode via next-themes
 - **Code Organization**: Feature-Sliced Design (FSD)
 
@@ -250,11 +265,11 @@ RootLayout (providers)
 
 ### Data Flow
 1. User types message → MessageInput
-2. Optimize updates UI immediately (Zustand)
-3. Sends to backend via SSE fetch
-4. Streams chunks → accumulates in Zustand
-5. Invalidates React Query cache on complete
-6. Messages refetch with new message
+2. React Query writes optimistic user/assistant placeholders into the chat cache
+3. Client opens an SSE request to `/api/v1/chats/{id}/messages`
+4. Next.js proxies the request to FastAPI via `BACKEND_URL`
+5. Stream chunks update the optimistic assistant message in cache
+6. On completion, chats/messages queries are invalidated and reconciled with server data
 
 ## Getting an OpenRouter API Key
 

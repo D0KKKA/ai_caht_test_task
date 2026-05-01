@@ -1,36 +1,32 @@
-/**
- * Server-Sent Events (SSE) stream parser
- */
-
 import { SSEEvent } from "@/entities/message/model/types";
+import { getOrCreateClientId } from "@/shared/lib/client-id";
 
-/**
- * Read SSE stream and yield events
- * Used for message streaming from backend
- */
 export async function* readSSEStream(
   url: string,
   body: Record<string, unknown>
 ): AsyncGenerator<SSEEvent> {
-  const clientId = getClientIdFromLocalStorage();
+  const clientId = getOrCreateClientId();
 
-  try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Client-Id": clientId,
-      },
-      body: JSON.stringify(body),
-    });
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(clientId ? { "X-Client-Id": clientId } : {}),
+    },
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
 
-    if (!response.ok) {
-      const text = await response.text();
-      console.error("[readSSEStream] HTTP error:", { status: response.status, text });
-      throw new Error(`HTTP error! status: ${response.status}: ${text}`);
-    }
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `HTTP ${response.status}`);
+  }
 
-  const reader = response.body!.getReader();
+  if (!response.body) {
+    throw new Error("Streaming response body is empty");
+  }
+
+  const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
 
@@ -40,47 +36,41 @@ export async function* readSSEStream(
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n\n");
-      buffer = lines.pop() || "";
+      const normalizedBuffer = buffer.replace(/\r\n/g, "\n");
+      const chunks = normalizedBuffer.split("\n\n");
+      buffer = chunks.pop() || "";
 
-      for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          try {
-            const event = JSON.parse(line.slice(6)) as SSEEvent;
-            yield event;
-          } catch (e) {
-            console.error("Failed to parse SSE event:", e);
-          }
+      for (const chunk of chunks) {
+        const event = parseSSEEvent(chunk);
+        if (event) {
+          yield event;
         }
       }
     }
 
-    // Process remaining buffer
     if (buffer.trim()) {
-      if (buffer.startsWith("data: ")) {
-        try {
-          const event = JSON.parse(buffer.slice(6)) as SSEEvent;
-          yield event;
-        } catch (e) {
-          console.error("Failed to parse final SSE event:", e);
-        }
+      const event = parseSSEEvent(buffer);
+      if (event) {
+        yield event;
       }
     }
   } finally {
     reader.releaseLock();
   }
-  } catch (error) {
-    console.error("[readSSEStream] Error:", error);
-    throw error;
-  }
 }
 
-/**
- * Helper to get client ID from localStorage
- */
-function getClientIdFromLocalStorage(): string {
-  if (typeof window === "undefined") {
-    return "";
+function parseSSEEvent(chunk: string): SSEEvent | null {
+  const dataLine = chunk
+    .split("\n")
+    .find((line) => line.startsWith("data:"));
+
+  if (!dataLine) {
+    return null;
   }
-  return localStorage.getItem("client_id") || "";
+
+  try {
+    return JSON.parse(dataLine.slice(5).trim()) as SSEEvent;
+  } catch {
+    return null;
+  }
 }

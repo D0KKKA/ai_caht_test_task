@@ -6,7 +6,7 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ReactNode } from "react";
+import { type ComponentPropsWithoutRef } from "react";
 
 interface MarkdownRendererProps {
   content: string;
@@ -35,17 +35,23 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
               {children}
             </pre>
           ),
-          code: ({ children, ...props }: any) => {
-            const isInline = !props.className?.includes("language-");
+          code: ({ children, className, ...props }: ComponentPropsWithoutRef<"code">) => {
+            const isInline = !className?.includes("language-");
             if (isInline) {
               return (
-                <code className="rounded-md bg-[#e4e4e4] px-1.5 py-0.5 font-mono text-[0.82em] text-[#c7254e] dark:bg-[#2a2a3d] dark:text-[#e06c75]">
+                <code
+                  className="rounded-md bg-[#e4e4e4] px-1.5 py-0.5 font-mono text-[0.82em] text-[#c7254e] dark:bg-[#2a2a3d] dark:text-[#e06c75]"
+                  {...props}
+                >
                   {children}
                 </code>
               );
             }
             return (
-              <code className="font-mono text-sm leading-relaxed text-[#1a1a1a] dark:text-[#cdd6f4]">
+              <code
+                className="font-mono text-sm leading-relaxed text-[#1a1a1a] dark:text-[#cdd6f4]"
+                {...props}
+              >
                 {children}
               </code>
             );

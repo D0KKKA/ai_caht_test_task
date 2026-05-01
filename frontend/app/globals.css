@@ -2,6 +2,12 @@
 
 @variant dark (&:where(.dark, .dark *));
 
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
 :root {
   --bg-primary: #f0f0f0;
   --bg-secondary: #ffffff;
@@ -39,6 +45,7 @@ body {
   color: var(--text-primary);
   font-family: "Söhne", ui-sans-serif, system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
+  overflow: hidden;
 }
 
 ::-webkit-scrollbar { width: 6px; }

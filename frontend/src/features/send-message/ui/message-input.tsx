@@ -1,12 +1,9 @@
 "use client";
 
-/**
- * Message input component
- */
-
-import { useState, useRef, useEffect } from "react";
-import { Button } from "@/shared/ui/button";
+import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { useMessageStore } from "@/entities/message/model/message-store";
+import { getErrorMessage } from "@/shared/lib/error-message";
 import { useSendMessage } from "../model/use-send-message";
 import { Send } from "lucide-react";
 
@@ -22,11 +19,11 @@ export function MessageInput({
   onSendMessage,
 }: MessageInputProps) {
   const [content, setContent] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isStreaming = useMessageStore((s) => s.isStreaming);
   const sendMessage = useSendMessage(chatId);
 
-  // Auto-resize textarea
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -34,33 +31,47 @@ export function MessageInput({
     }
   }, [content]);
 
-  // Refocus textarea after streaming ends
   useEffect(() => {
     if (!isStreaming) {
       textareaRef.current?.focus();
     }
   }, [isStreaming]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!content.trim() || isStreaming) return;
-    if (onSendMessage) {
-      await onSendMessage(content);
-    } else {
-      await sendMessage(content);
+  const submitMessage = async () => {
+    if (!content.trim() || isStreaming || isSubmitting) {
+      return;
     }
-    setContent("");
+
+    setIsSubmitting(true);
+
+    try {
+      if (onSendMessage) {
+        await onSendMessage(content);
+      } else {
+        await sendMessage(content);
+      }
+
+      setContent("");
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    void submitMessage();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    // Submit on Enter, newline on Shift+Enter
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleSubmit(e as any);
+      void submitMessage();
     }
   };
 
-  const isDisabled = disabled || isStreaming || !content.trim();
+  const isDisabled = disabled || isStreaming || isSubmitting || !content.trim();
 
   return (
     <form onSubmit={handleSubmit} className="flex items-center gap-3 rounded-2xl border border-[var(--border-strong)] bg-[var(--bg-secondary)] px-4 py-2.5 shadow-[var(--shadow-md)] transition-all focus-within:border-[var(--accent)] focus-within:shadow-[0_0_0_3px_rgba(16,163,127,0.12),var(--shadow-md)]">
@@ -69,7 +80,7 @@ export function MessageInput({
         value={content}
         onChange={(e) => setContent(e.target.value)}
         onKeyDown={handleKeyDown}
-        disabled={disabled || isStreaming}
+        disabled={disabled || isStreaming || isSubmitting}
         placeholder="Напишите сообщение…"
         className="flex-1 resize-none bg-transparent py-1 text-sm leading-6 text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none disabled:opacity-50"
         rows={1}

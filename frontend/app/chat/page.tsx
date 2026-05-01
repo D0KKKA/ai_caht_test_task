@@ -1,26 +1,19 @@
 "use client";
 
-import { Sidebar } from "@/widgets/sidebar/ui/sidebar";
-import { MessageInput } from "@/features/send-message/ui/message-input";
 import { useRouter } from "next/navigation";
 import { useCreateChat } from "@/entities/chat/api/chat-api";
-
-export const dynamic = "force-dynamic";
+import { MessageInput } from "@/features/send-message/ui/message-input";
+import { getPendingMessageStorageKey } from "@/shared/lib/pending-message";
+import { Sidebar } from "@/widgets/sidebar/ui/sidebar";
 
 export default function NewChatPage() {
   const router = useRouter();
   const createChat = useCreateChat();
 
   const handleSendMessage = async (content: string) => {
-    // Create chat and send first message
-    createChat.mutate(undefined, {
-      onSuccess: (data) => {
-        // Navigate to the new chat - it will handle sending the message
-        router.push(`/chat/${data.id}`);
-        // Store the message to be sent in session storage
-        sessionStorage.setItem("pendingMessage", content);
-      },
-    });
+    const chat = await createChat.mutateAsync();
+    sessionStorage.setItem(getPendingMessageStorageKey(chat.id), content);
+    router.replace(`/chat/${chat.id}`);
   };
 
   return (

@@ -3,22 +3,20 @@
 import { useEffect, useRef } from "react";
 import { Message } from "../model/types";
 import { MessageBubble } from "./message-bubble";
-import { StreamingCursor } from "./streaming-cursor";
 
 interface MessageFeedProps {
   messages: Message[];
   isStreaming: boolean;
-  streamingContent: string;
+  streamingMessageId: string | null;
 }
 
 export function MessageFeed({
   messages,
   isStreaming,
-  streamingContent,
+  streamingMessageId,
 }: MessageFeedProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom when messages change
   useEffect(() => {
     const raf = requestAnimationFrame(() => {
       if (scrollContainerRef.current) {
@@ -26,13 +24,10 @@ export function MessageFeed({
       }
     });
     return () => cancelAnimationFrame(raf);
-  }, [messages, isStreaming, streamingContent]);
+  }, [messages, isStreaming]);
 
   return (
-    <div
-      ref={scrollContainerRef}
-      className="flex-1 overflow-y-auto"
-    >
+    <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto max-w-3xl px-6 py-8">
         {messages.length === 0 && !isStreaming ? (
           <div className="flex h-[60vh] items-center justify-center">
@@ -45,16 +40,14 @@ export function MessageFeed({
         ) : (
           <div className="space-y-6">
             {messages.map((message) => (
-              <MessageBubble key={message.id} message={message} />
+              <MessageBubble
+                key={message.id}
+                message={message}
+                showStreamingCursor={
+                  isStreaming && streamingMessageId === message.id
+                }
+              />
             ))}
-            {isStreaming && (
-              <div className="flex justify-start">
-                <div className="w-full text-sm leading-relaxed text-[var(--text-primary)]">
-                  <span className="whitespace-pre-wrap break-words">{streamingContent}</span>
-                  <StreamingCursor />
-                </div>
-              </div>
-            )}
           </div>
         )}
       </div>

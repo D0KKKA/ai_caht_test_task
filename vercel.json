@@ -1,14 +1,15 @@
 {
-  "version": 2,
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
     {
       "source": "/_backend/:path*",
-      "destination": "/backend/app/main.py"
+      "destination": "/backend/:path*"
     }
   ],
   "functions": {
-    "backend/app/main.py": {
-      "runtime": "vercel-python@0.1.0"
+    "backend/app/api/index.py": {
+      "maxDuration": 60,
+      "excludeFiles": "{backend/tests/**,backend/venv/**,backend/alembic/**,backend/.env,backend/.env.example,backend/Dockerfile,**/__pycache__/**}"
     }
   }
 }

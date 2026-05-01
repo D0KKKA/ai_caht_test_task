@@ -1,107 +1,137 @@
 "use client";
 
-/**
- * Hook for sending messages with streaming
- */
-
-import { useMessageStore } from "@/entities/message/model/message-store";
-import { readSSEStream } from "@/shared/lib/streaming";
-import { SSEEvent, Message } from "@/entities/message/model/types";
 import { useQueryClient } from "@tanstack/react-query";
+import { Message } from "@/entities/message/model/types";
+import { useMessageStore } from "@/entities/message/model/message-store";
+import { API_BASE_PATH } from "@/shared/lib/api";
+import { readSSEStream } from "@/shared/lib/streaming";
 
 export function useSendMessage(chatId: string) {
   const queryClient = useQueryClient();
-  const {
-    addMessage,
-    setIsStreaming,
-    setStreamingMessageId,
-    appendStreamingContent,
-    resetStreaming,
-  } = useMessageStore();
+  const { startStreaming, finishStreaming } = useMessageStore();
 
-  return async (content: string) => {
-    if (!content.trim() || !chatId) return;
+  return async (rawContent: string) => {
+    const content = rawContent.trim();
 
-    // Add user message optimistically
+    if (!content || !chatId) {
+      return;
+    }
+
+    const queryKey = ["chats", chatId, "messages"] as const;
+    const createdAt = new Date().toISOString();
+    const userMessageId = `temp-user-${crypto.randomUUID()}`;
+    const assistantMessageId = `temp-assistant-${crypto.randomUUID()}`;
+
     const userMessage: Message = {
-      id: `user-${Date.now()}`,
+      id: userMessageId,
       chat_id: chatId,
       role: "user",
       content,
-      created_at: new Date().toISOString(),
+      created_at: createdAt,
       is_summarized: false,
     };
-    addMessage(userMessage);
 
-    // Create placeholder for assistant message
-    const placeholderId = `streaming-${Date.now()}`;
-    const placeholderMessage: Message = {
-      id: placeholderId,
+    const assistantMessage: Message = {
+      id: assistantMessageId,
       chat_id: chatId,
       role: "assistant",
       content: "",
-      created_at: new Date().toISOString(),
+      created_at: createdAt,
       is_summarized: false,
     };
-    addMessage(placeholderMessage);
 
-    // Start streaming
-    setIsStreaming(true);
-    setStreamingMessageId(placeholderId);
+    await queryClient.cancelQueries({ queryKey });
+    queryClient.setQueryData<Message[]>(queryKey, (current = []) => [
+      ...current,
+      userMessage,
+      assistantMessage,
+    ]);
+    startStreaming(chatId, assistantMessageId);
+
+    let pendingChunk = "";
+    let rafId: number | null = null;
+    let finalContent = "";
+
+    const flushPendingChunk = () => {
+      if (!pendingChunk) {
+        rafId = null;
+        return;
+      }
+
+      const chunk = pendingChunk;
+      pendingChunk = "";
+      finalContent += chunk;
+      queryClient.setQueryData<Message[]>(queryKey, (current = []) =>
+        current.map((message) =>
+          message.id === assistantMessageId
+            ? { ...message, content: message.content + chunk }
+            : message
+        )
+      );
+      rafId = null;
+    };
 
     try {
-      const url = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/v1/chats/${chatId}/messages`;
-
-      let pendingChunk = "";
-      let rafId: number | null = null;
-
-      const flush = () => {
-        if (pendingChunk) {
-          appendStreamingContent(pendingChunk);
-          pendingChunk = "";
-        }
-        rafId = null;
-      };
-
-      for await (const event of readSSEStream(url, { content })) {
+      for await (const event of readSSEStream(
+        `${API_BASE_PATH}/chats/${chatId}/messages`,
+        { content }
+      )) {
         if (event.type === "delta" && event.content) {
           pendingChunk += event.content;
-          if (!rafId) rafId = requestAnimationFrame(flush);
-        } else if (event.type === "done") {
-          if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
-          flush();
-          // Replace placeholder with real message
-          const finalMessage: Message = {
-            id: event.message_id || placeholderId,
-            chat_id: chatId,
-            role: "assistant",
-            content: event.content || "",
-            created_at: new Date().toISOString(),
-            is_summarized: false,
-          };
 
-          // Update the placeholder message
-          const { messages } = useMessageStore.getState();
-          const messageIndex = messages.findIndex((m) => m.id === placeholderId);
-          if (messageIndex !== -1) {
-            messages[messageIndex] = finalMessage;
-            useMessageStore.setState({ messages: [...messages] });
+          if (rafId === null) {
+            rafId = requestAnimationFrame(flushPendingChunk);
           }
 
-          // Refresh messages from server
-          queryClient.invalidateQueries({ queryKey: ["chats", chatId, "messages"] });
-          // Refresh chat list once immediately, then again after title generation delay
+          continue;
+        }
+
+        if (event.type === "error") {
+          throw new Error(event.detail || "Не удалось отправить сообщение.");
+        }
+
+        if (event.type === "done") {
+          if (rafId !== null) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
+          }
+
+          flushPendingChunk();
+          if (!finalContent && event.content) {
+            finalContent = event.content;
+          }
+
+          queryClient.setQueryData<Message[]>(queryKey, (current = []) =>
+            current.map((message) =>
+              message.id === assistantMessageId
+                ? {
+                    ...message,
+                    id: event.message_id || assistantMessageId,
+                    content: finalContent,
+                  }
+                : message
+            )
+          );
+
+          queryClient.invalidateQueries({ queryKey });
           queryClient.invalidateQueries({ queryKey: ["chats"] });
-          setTimeout(() => queryClient.invalidateQueries({ queryKey: ["chats"] }), 3000);
-          setTimeout(() => queryClient.invalidateQueries({ queryKey: ["chats"] }), 6000);
-        } else if (event.type === "error") {
-          console.error("Stream error:", event.detail);
+          return;
         }
       }
+
+      throw new Error("Поток ответа завершился неожиданно.");
     } catch (error) {
-      console.error("Failed to stream message:", error);
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
+
+      queryClient.setQueryData<Message[]>(queryKey, (current = []) =>
+        current.filter((message) => message.id !== assistantMessageId)
+      );
+      queryClient.invalidateQueries({ queryKey });
+      throw error;
     } finally {
-      resetStreaming();
+      finishStreaming();
     }
   };
 }
