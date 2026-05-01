@@ -1,21 +1,34 @@
 """FastAPI application factory."""
 
+import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
-from app.core.database import init_db, close_db
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.config import get_settings
+from app.core.database import get_db, init_db, close_db
 from app.api.v1.router import router as api_v1_router
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+settings = get_settings()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan event handler for app startup and shutdown."""
-    # Startup
     await init_db()
+    logger.info("Database initialized")
     yield
-    # Shutdown
     await close_db()
+    logger.info("Database connection closed")
 
 
 def create_app() -> FastAPI:
@@ -27,22 +40,24 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # CORS middleware
+    # CORS — no wildcard, no credentials
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # Allow all origins for development
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_origins=settings.allowed_origins,
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+        allow_headers=["Content-Type", "X-Client-Id"],
     )
 
     # Include API routes
     app.include_router(api_v1_router)
 
-    # Health check endpoint
     @app.get("/health")
-    async def health_check():
-        """Health check endpoint."""
+    async def health_check(request: Request):
+        """Health check that verifies database connectivity."""
+        from app.core.database import get_db_context
+        async with get_db_context() as db:
+            await db.execute(text("SELECT 1"))
         return {"status": "ok"}
 
     return app

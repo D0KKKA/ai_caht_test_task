@@ -6,6 +6,13 @@ from typing import AsyncGenerator
 from functools import lru_cache
 
 from app.core.config import get_settings
+from app.core.constants import (
+    LLM_HTTP_REFERER,
+    LLM_APP_TITLE,
+    SSE_DATA_PREFIX,
+    SSE_DATA_OFFSET,
+    SSE_DONE_SENTINEL,
+)
 
 
 class LLMService:
@@ -17,6 +24,7 @@ class LLMService:
         self.api_key = self.settings.openrouter_api_key
         self.api_url = self.settings.openrouter_api_url
         self.model = self.settings.model_name
+        self.timeout = self.settings.llm_request_timeout
 
     async def stream_completion(
         self, messages: list[dict], temperature: float = 0.7
@@ -32,8 +40,8 @@ class LLMService:
         """
         headers = {
             "Authorization": f"Bearer {self.api_key}",
-            "HTTP-Referer": "https://github.com",
-            "X-Title": "AI Chat App",
+            "HTTP-Referer": LLM_HTTP_REFERER,
+            "X-Title": LLM_APP_TITLE,
         }
 
         payload = {
@@ -43,7 +51,7 @@ class LLMService:
             "temperature": temperature,
         }
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
             async with client.stream(
                 "POST",
                 self.api_url,
@@ -57,9 +65,9 @@ class LLMService:
                     )
 
                 async for line in response.aiter_lines():
-                    if line.startswith("data: "):
-                        data = line[6:]
-                        if data == "[DONE]":
+                    if line.startswith(SSE_DATA_PREFIX):
+                        data = line[SSE_DATA_OFFSET:]
+                        if data == SSE_DONE_SENTINEL:
                             break
 
                         try:
@@ -88,8 +96,8 @@ class LLMService:
         """
         headers = {
             "Authorization": f"Bearer {self.api_key}",
-            "HTTP-Referer": "https://github.com",
-            "X-Title": "AI Chat App",
+            "HTTP-Referer": LLM_HTTP_REFERER,
+            "X-Title": LLM_APP_TITLE,
         }
 
         payload = {
@@ -99,7 +107,7 @@ class LLMService:
             "temperature": temperature,
         }
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
             response = await client.post(
                 self.api_url,
                 headers=headers,

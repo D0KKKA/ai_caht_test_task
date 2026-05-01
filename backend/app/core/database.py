@@ -24,11 +24,15 @@ async def init_db() -> None:
 
     settings = get_settings()
 
-    # Create async engine with SQLite
+    # Create async engine with PostgreSQL
     _engine = create_async_engine(
         settings.database_url,
         echo=False,  # Set to True for SQL debug logging
         future=True,
+        pool_size=settings.db_pool_size,
+        max_overflow=settings.db_max_overflow,
+        pool_pre_ping=True,
+        connect_args={"command_timeout": settings.db_command_timeout},
     )
 
     # Session factory

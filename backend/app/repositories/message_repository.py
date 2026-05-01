@@ -4,7 +4,7 @@ from typing import List
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import and_, func
+from sqlalchemy import and_, func, update
 
 from app.models.message import Message
 from app.repositories.base import BaseRepository
@@ -84,15 +84,12 @@ class MessageRepository(BaseRepository[Message]):
         if not message_ids:
             return 0
 
-        query = (
-            select(Message)
+        stmt = (
+            update(Message)
             .where(Message.id.in_(message_ids))
+            .values(is_summarized=True)
+            .execution_options(synchronize_session=False)
         )
-        result = await self.db.execute(query)
-        messages = result.scalars().all()
-
-        for msg in messages:
-            msg.is_summarized = True
-
+        result = await self.db.execute(stmt)
         await self.db.commit()
-        return len(messages)
+        return result.rowcount

@@ -1,5 +1,6 @@
 """Chat service for chat operations and management."""
 
+import logging
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -7,7 +8,10 @@ from app.models.chat import Chat
 from app.repositories.chat_repository import ChatRepository
 from app.repositories.message_repository import MessageRepository
 from app.services.llm_service import LLMService
-from app.core.config import get_settings
+from app.core.constants import TEMPERATURE_TITLE_GENERATION, TITLE_MAX_LENGTH
+from app.core.prompts import TITLE_GENERATION_PROMPT
+
+logger = logging.getLogger(__name__)
 
 
 class ChatService:
@@ -21,7 +25,6 @@ class ChatService:
         """Initialize chat service with dependencies."""
         self.chat_repo = chat_repo
         self.llm_service = llm_service
-        self.settings = get_settings()
 
     async def create_chat(self, client_id: UUID, db: AsyncSession) -> Chat:
         """Create a new empty chat for a client.
@@ -127,20 +130,19 @@ class ChatService:
         try:
             title = await self.llm_service.completion(
                 [
-                    {"role": "system", "content": self.settings.title_generation_prompt},
+                    {"role": "system", "content": TITLE_GENERATION_PROMPT},
                     {"role": "user", "content": first_message},
                 ],
-                temperature=0.5,
+                temperature=TEMPERATURE_TITLE_GENERATION,
             )
 
             # Clean up title: strip whitespace and quotes
             title = title.strip().strip('"\'')
 
             # Truncate to reasonable length
-            title = title[:60]
+            title = title[:TITLE_MAX_LENGTH]
 
             # Update chat with generated title
             await self.chat_repo.update(chat_id, title=title)
         except Exception as e:
-            # Log error but don't fail - title generation is non-critical
-            print(f"Title generation failed for chat {chat_id}: {str(e)}")
+            logger.error("Title generation failed for chat %s: %s", chat_id, e)

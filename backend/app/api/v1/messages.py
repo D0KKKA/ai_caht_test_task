@@ -1,8 +1,10 @@
 """Message API endpoints with streaming."""
 
 import json
+import logging
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,13 +17,13 @@ from app.core.dependencies import (
     get_message_service,
     get_client_id,
 )
+from app.core.constants import MAX_ACCUMULATED_RESPONSE_CHARS
 from app.services.llm_service import get_llm_service
-from app.services.context_service import ContextService
-from app.services.chat_service import ChatService
-from app.services.message_service import MessageService
 from app.repositories.message_repository import MessageRepository
 from app.repositories.chat_repository import ChatRepository
 from app.schemas.message import MessageCreate, MessageResponse
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/chats", tags=["messages"])
 
@@ -38,7 +40,6 @@ async def get_chat_messages(
 
     Requires X-Client-Id header.
     """
-    # Verify chat ownership
     chat_repo = await get_chat_repository(db)
     chat = await chat_repo.get_by_id_and_client(chat_id, client_id)
 
@@ -60,7 +61,6 @@ async def send_message(
     payload: MessageCreate,
     client_id: UUID = Depends(get_client_id),
     db: AsyncSession = Depends(get_db),
-    background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
     """Send a message and stream assistant response via SSE.
 
@@ -69,7 +69,6 @@ async def send_message(
     Returns:
         StreamingResponse with SSE events
     """
-    # Validate chat exists and belongs to client
     chat_repo = await get_chat_repository(db)
     chat = await chat_repo.get_by_id_and_client(chat_id, client_id)
 
@@ -79,14 +78,12 @@ async def send_message(
             detail="Chat not found",
         )
 
-    # Validate message content
     if not payload.content or not payload.content.strip():
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Message content cannot be empty",
         )
 
-    # Prepare services
     message_repo = await get_message_repository(db)
     message_svc = await get_message_service(message_repo)
     context_svc = await get_context_service(
@@ -97,57 +94,64 @@ async def send_message(
     chat_svc = await get_chat_service(chat_repo, get_llm_service())
     llm_svc = get_llm_service()
 
-    # Save user message
     user_message = await message_svc.create_user_message(
         chat_id, payload.content, db
     )
 
+    # Capture for closure
+    first_message_content = payload.content
+    prev_message_count = chat.message_count
+
     async def generate_sse():
         """Generate SSE events for streaming response."""
         try:
-            # Build context for LLM
             context = await context_svc.build_context(chat_id, db)
 
-            # Stream from LLM
+            # Stream from LLM — yield all chunks to client, but cap what we store
             accumulated_content = ""
             async for chunk in llm_svc.stream_completion(context):
-                accumulated_content += chunk
                 yield f"data: {json.dumps({'type': 'delta', 'content': chunk})}\n\n"
+                if len(accumulated_content) < MAX_ACCUMULATED_RESPONSE_CHARS:
+                    accumulated_content += chunk
 
             # Save assistant message
             assistant_message = await message_svc.create_assistant_message(
                 chat_id, accumulated_content, db
             )
 
-            # Send done event
             yield f"data: {json.dumps({'type': 'done', 'message_id': str(assistant_message.id), 'content': accumulated_content})}\n\n"
 
-            # Schedule background tasks
-            # Need to create new DB context for background work
-            async with get_db_context() as bg_db:
-                # Update message count (user + assistant = 2)
-                chat_repo_bg = await get_chat_repository(bg_db)
-                await chat_repo_bg.update(chat_id, message_count=chat.message_count + 2)
+            # Post-stream work in a fresh DB context
+            try:
+                async with get_db_context() as bg_db:
+                    chat_repo_bg = await get_chat_repository(bg_db)
+                    await chat_repo_bg.update(chat_id, message_count=prev_message_count + 2)
 
-                # Maybe generate title (if first message)
-                if chat.message_count == 0:
-                    chat_svc_bg = await get_chat_service(chat_repo_bg, get_llm_service())
-                    await chat_svc_bg.maybe_generate_title(
-                        chat_id, payload.content, bg_db
+                    if prev_message_count == 0:
+                        chat_svc_bg = await get_chat_service(chat_repo_bg, get_llm_service())
+                        await chat_svc_bg.maybe_generate_title(
+                            chat_id, first_message_content, bg_db
+                        )
+
+                    context_svc_bg = await get_context_service(
+                        chat_repo_bg,
+                        await get_message_repository(bg_db),
+                        get_llm_service(),
                     )
-
-                # Maybe summarize (if needed)
-                context_svc_bg = await get_context_service(
-                    chat_repo_bg,
-                    await get_message_repository(bg_db),
-                    get_llm_service(),
+                    await context_svc_bg.maybe_summarize(chat_id, bg_db)
+            except Exception as bg_exc:
+                logger.error(
+                    "Post-stream background work failed for chat %s: %s",
+                    chat_id,
+                    bg_exc,
                 )
-                await context_svc_bg.maybe_summarize(chat_id, bg_db)
 
+        except HTTPException as e:
+            logger.warning("HTTPException in SSE stream for chat %s: %s", chat_id, e.detail)
+            yield f"data: {json.dumps({'type': 'error', 'detail': e.detail})}\n\n"
         except Exception as e:
-            # Send error event
-            error_msg = str(e)
-            yield f"data: {json.dumps({'type': 'error', 'detail': error_msg})}\n\n"
+            logger.error("Unexpected error in SSE stream for chat %s: %s", chat_id, e, exc_info=True)
+            yield f"data: {json.dumps({'type': 'error', 'detail': 'Internal server error'})}\n\n"
 
     return StreamingResponse(
         generate_sse(),

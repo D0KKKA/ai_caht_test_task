@@ -1,12 +1,23 @@
 """Context service for managing message context and summarization."""
 
+import json
+import logging
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.constants import (
+    TEMPERATURE_SUMMARIZATION,
+    MAX_SUMMARY_LENGTH,
+    SUMMARY_CONTEXT_LABEL,
+    SUMMARY_LATER_LABEL,
+)
+from app.core.prompts import SUMMARIZER_ROLE_PROMPT, SYSTEM_PROMPT, SUMMARIZATION_PROMPT
 from app.repositories.chat_repository import ChatRepository
 from app.repositories.message_repository import MessageRepository
 from app.services.llm_service import LLMService
+
+logger = logging.getLogger(__name__)
 
 
 class ContextService:
@@ -31,43 +42,30 @@ class ContextService:
         1. Load chat summary (accumulated from old messages)
         2. Get recent unsummarized messages (last N)
         3. Construct: [system] + [summary_message if exists] + [recent_messages]
-
-        Args:
-            chat_id: ID of the chat
-            db: Database session
-
-        Returns:
-            List of message dicts with role and content keys
         """
-        # Set repository session
         self.chat_repo.db = db
         self.message_repo.db = db
 
-        # Load chat to get summary
         chat = await self.chat_repo.get_by_id(chat_id)
         if not chat:
             raise ValueError(f"Chat {chat_id} not found")
 
-        # Build message context
         messages = [
-            {"role": "system", "content": self.settings.system_prompt},
+            {"role": "system", "content": SYSTEM_PROMPT},
         ]
 
-        # Add summary as assistant message if it exists
         if chat.summary:
             messages.append(
                 {
                     "role": "assistant",
-                    "content": f"[Previous context summary]:\n{chat.summary}",
+                    "content": f"{SUMMARY_CONTEXT_LABEL}{chat.summary}",
                 }
             )
 
-        # Get recent unsummarized messages
         recent_messages = await self.message_repo.get_recent_unsummarized(
             chat_id, limit=self.settings.recent_messages_kept
         )
 
-        # Add recent messages
         for msg in recent_messages:
             messages.append({"role": msg.role, "content": msg.content})
 
@@ -78,80 +76,59 @@ class ContextService:
 
         Triggered after each message is added. Summarizes oldest batch when
         unsummarized message count exceeds threshold.
-
-        Args:
-            chat_id: ID of the chat
-            db: Database session
         """
-        # Set repository session
         self.chat_repo.db = db
         self.message_repo.db = db
 
-        # Count unsummarized messages
-        unsummarized_count = await self.message_repo.count_unsummarized(chat_id)
-
-        # Check if summarization is needed
-        if unsummarized_count <= self.settings.message_threshold:
-            return
-
-        # Get oldest messages to summarize
+        # Fetch all unsummarized in one query (avoids extra COUNT query)
         all_unsummarized = await self.message_repo.get_unsummarized_by_chat(chat_id)
 
-        # Take first N messages to summarize
+        if len(all_unsummarized) <= self.settings.message_threshold:
+            return
+
         batch_to_summarize = all_unsummarized[: self.settings.summary_batch_size]
 
         if not batch_to_summarize:
             return
 
-        # Format messages for summarization prompt
-        formatted_messages = ""
-        for msg in batch_to_summarize:
-            role = "User" if msg.role == "user" else "Assistant"
-            formatted_messages += f"{role}: {msg.content}\n"
+        # Use JSON to safely encode user content — prevents prompt injection
+        formatted_messages = json.dumps(
+            [{"role": msg.role, "content": msg.content} for msg in batch_to_summarize],
+            ensure_ascii=False,
+            indent=2,
+        )
 
-        # Call LLM to summarize
         summary_prompt = (
-            f"{self.settings.summarization_prompt}\n\n{formatted_messages}"
+            f"{SUMMARIZATION_PROMPT}\n\n"
+            f"Conversation (JSON format):\n{formatted_messages}"
         )
 
         try:
             new_summary = await self.llm_service.completion(
                 [
-                    {
-                        "role": "system",
-                        "content": "You are a conversation summarizer. "
-                        "Create a concise summary preserving key facts and context.",
-                    },
+                    {"role": "system", "content": SUMMARIZER_ROLE_PROMPT},
                     {"role": "user", "content": summary_prompt},
                 ],
-                temperature=0.3,  # Lower temperature for more consistent summaries
+                temperature=TEMPERATURE_SUMMARIZATION,
             )
         except Exception as e:
-            # Log error but don't fail - summarization is non-critical
-            print(f"Summarization failed for chat {chat_id}: {str(e)}")
+            logger.error("Summarization failed for chat %s: %s", chat_id, e)
             return
 
-        # Get chat and update summary
         chat = await self.chat_repo.get_by_id(chat_id)
         if not chat:
             return
 
-        # Combine with existing summary if present
         if chat.summary:
-            combined_summary = f"{chat.summary}\n\n[Later conversation]:\n{new_summary}"
+            combined_summary = f"{chat.summary}{SUMMARY_LATER_LABEL}{new_summary}"
         else:
             combined_summary = new_summary
 
-        # Update chat with new summary (truncate if too long)
-        max_summary_length = 2000
-        if len(combined_summary) > max_summary_length:
-            combined_summary = combined_summary[-max_summary_length:]
+        # Keep the beginning of the summary (most established context), not the end
+        if len(combined_summary) > MAX_SUMMARY_LENGTH:
+            combined_summary = combined_summary[:MAX_SUMMARY_LENGTH]
 
-        await self.chat_repo.update(
-            chat_id,
-            summary=combined_summary,
-        )
+        await self.chat_repo.update(chat_id, summary=combined_summary)
 
-        # Mark messages as summarized
         message_ids = [msg.id for msg in batch_to_summarize]
         await self.message_repo.mark_as_summarized(message_ids)

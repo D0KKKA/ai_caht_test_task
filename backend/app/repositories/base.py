@@ -1,8 +1,15 @@
 """Base repository with generic async CRUD operations."""
 
+import logging
 from typing import TypeVar, Generic, Type, List
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
+from fastapi import HTTPException, status
+
+logger = logging.getLogger(__name__)
 
 ModelT = TypeVar("ModelT")
 
@@ -17,10 +24,18 @@ class BaseRepository(Generic[ModelT]):
 
     async def create(self, obj: ModelT) -> ModelT:
         """Create and return a new object."""
-        self.db.add(obj)
-        await self.db.commit()
-        await self.db.refresh(obj)
-        return obj
+        try:
+            self.db.add(obj)
+            await self.db.commit()
+            await self.db.refresh(obj)
+            return obj
+        except IntegrityError as e:
+            await self.db.rollback()
+            logger.error("IntegrityError on create %s: %s", self.model.__name__, e)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Database constraint violation",
+            )
 
     async def get_by_id(self, id) -> ModelT | None:
         """Get object by primary key."""
@@ -56,7 +71,7 @@ class BaseRepository(Generic[ModelT]):
         return True
 
     async def count(self) -> int:
-        """Count all objects."""
-        query = select(self.model)
+        """Count all objects using SQL COUNT (does not load rows into memory)."""
+        query = select(func.count(self.model.id))
         result = await self.db.execute(query)
-        return len(result.scalars().all())
+        return result.scalar() or 0

@@ -14,30 +14,27 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "postgresql+asyncpg://postgres:1234@localhost:5432/ai_chat_db"
 
+    # CORS — comma-separated list of allowed origins (e.g. "http://localhost:3000,https://yourdomain.com")
+    allowed_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]
+
+    # Rate limiting
+    rate_limit: str = "60/minute"
+
     # LLM Model
     model_name: str = "google/gemma-3-27b-it:free"
+
+    # Database connection pool (ops-tunable)
+    db_pool_size: int = 20
+    db_max_overflow: int = 10
+    db_command_timeout: int = 30  # seconds
+
+    # HTTP client timeout for LLM requests (ops-tunable)
+    llm_request_timeout: float = 60.0  # seconds
 
     # Context Management Thresholds
     message_threshold: int = 30  # Trigger summarization when exceeded
     recent_messages_kept: int = 20  # Always send last N messages to LLM
     summary_batch_size: int = 10  # How many old messages to summarize per run
-
-    # System Prompts
-    system_prompt: str = (
-        "You are a helpful AI assistant. "
-        "Provide clear, concise, and accurate answers. "
-        "Use markdown formatting when appropriate."
-    )
-
-    summarization_prompt: str = (
-        "Summarize the following conversation segment concisely, "
-        "preserving key facts and context. Keep it under 150 words."
-    )
-
-    title_generation_prompt: str = (
-        "Generate a concise 3-5 word title for a conversation based on the first message. "
-        "Reply with ONLY the title, no quotes, no punctuation."
-    )
 
     model_config = {
         "protected_namespaces": ("settings_",),

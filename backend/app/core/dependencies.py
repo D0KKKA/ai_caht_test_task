@@ -2,7 +2,7 @@
 
 from functools import lru_cache
 from uuid import UUID
-from fastapi import Header
+from fastapi import Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.chat_repository import ChatRepository
@@ -28,7 +28,10 @@ async def get_client_id(x_client_id: str = Header(..., alias="X-Client-Id")) -> 
     try:
         return UUID(x_client_id)
     except ValueError:
-        raise ValueError(f"Invalid X-Client-Id: {x_client_id}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid X-Client-Id: must be a valid UUID",
+        )
 
 
 async def get_chat_repository(db: AsyncSession) -> ChatRepository:

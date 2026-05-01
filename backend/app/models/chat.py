@@ -39,7 +39,7 @@ class Chat(Base):
         "Message",
         back_populates="chat",
         cascade="all, delete-orphan",
-        lazy="selectin",
+        lazy="select",
     )
 
     # Composite index for finding chats by client_id and ordering by updated_at

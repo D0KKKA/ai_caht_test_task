@@ -3,6 +3,7 @@
 from uuid import UUID
 from datetime import datetime
 from pydantic import BaseModel, Field
+from app.core.constants import MAX_MESSAGE_INPUT_CHARS
 
 
 class MessageBase(BaseModel):
@@ -15,7 +16,7 @@ class MessageBase(BaseModel):
 class MessageCreate(BaseModel):
     """Schema for creating a new message (user input)."""
 
-    content: str = Field(min_length=1, description="Message content")
+    content: str = Field(min_length=1, max_length=MAX_MESSAGE_INPUT_CHARS, description="Message content")
 
 
 class MessageResponse(MessageBase):
