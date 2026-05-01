@@ -35,7 +35,12 @@ class ContextService:
         self.llm_service = llm_service
         self.settings = get_settings()
 
-    async def build_context(self, chat_id: UUID, db: AsyncSession) -> list[dict]:
+    async def build_context(
+        self,
+        chat_id: UUID,
+        db: AsyncSession,
+        exclude_message_id: UUID | None = None,
+    ) -> list[dict]:
         """Build the messages list to send to LLM.
 
         Strategy:
@@ -73,6 +78,8 @@ class ContextService:
         )
 
         for msg in recent_messages:
+            if exclude_message_id is not None and msg.id == exclude_message_id:
+                continue
             messages.append({"role": msg.role, "content": msg.content})
 
         return messages

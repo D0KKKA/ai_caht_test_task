@@ -1,13 +1,16 @@
 "use client";
 
-import { useEffect, useEffectEvent, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { toast } from "sonner";
-import { MessageFeed } from "@/entities/message/ui/message-feed";
-import { MessageInput } from "@/features/send-message/ui/message-input";
 import { useMessages } from "@/entities/message/api/message-api";
 import { useMessageStore } from "@/entities/message/model/message-store";
+import { Message } from "@/entities/message/model/types";
+import { MessageFeed } from "@/entities/message/ui/message-feed";
+import { useRegenerateMessage } from "@/features/send-message/model/use-regenerate-message";
 import { useSendMessage } from "@/features/send-message/model/use-send-message";
+import { MessageInput } from "@/features/send-message/ui/message-input";
 import { getPendingMessageStorageKey } from "@/shared/lib/pending-message";
+import { getErrorMessage } from "@/shared/lib/error-message";
 
 interface ChatAreaProps {
   chatId: string;
@@ -22,20 +25,45 @@ export function ChatArea({ chatId }: ChatAreaProps) {
     cancelStreamingForChat,
   } = useMessageStore();
   const sendMessage = useSendMessage(chatId);
+  const regenerateMessage = useRegenerateMessage(chatId);
   const attemptedPendingChatIds = useRef<Set<string>>(new Set());
+  const isStreamingCurrentChat = isStreaming && streamingChatId === chatId;
 
-  const attemptPendingMessage = useEffectEvent(
-    async (currentChatId: string, pendingMessage: string, storageKey: string) => {
+  const regeneratableMessageId = useMemo(() => {
+    const lastMessage = messages[messages.length - 1];
+
+    if (!lastMessage || lastMessage.role !== "assistant" || isStreamingCurrentChat) {
+      return null;
+    }
+
+    return lastMessage.id;
+  }, [isStreamingCurrentChat, messages]);
+
+  const attemptPendingMessage = useCallback(
+    async (pendingMessage: string, storageKey: string) => {
+      sessionStorage.removeItem(storageKey);
+
       try {
         await sendMessage(pendingMessage);
-        sessionStorage.removeItem(storageKey);
       } catch {
-        attemptedPendingChatIds.current.delete(currentChatId);
+        sessionStorage.setItem(storageKey, pendingMessage);
         toast.error(
-          "Не удалось отправить первое сообщение. Оно сохранено для повторной попытки."
+          "Не удалось отправить первое сообщение. Оно сохранено для повторной попытки.",
         );
       }
-    }
+    },
+    [sendMessage],
+  );
+
+  const handleRegenerateMessage = useCallback(
+    async (message: Message) => {
+      try {
+        await regenerateMessage(message.id, message.content);
+      } catch (error) {
+        toast.error(getErrorMessage(error));
+      }
+    },
+    [regenerateMessage],
   );
 
   useEffect(() => {
@@ -55,28 +83,30 @@ export function ChatArea({ chatId }: ChatAreaProps) {
     }
 
     attemptedPendingChatIds.current.add(chatId);
-    void attemptPendingMessage(chatId, pendingMessage, storageKey);
-  }, [chatId]);
+    void attemptPendingMessage(pendingMessage, storageKey);
+  }, [attemptPendingMessage, chatId]);
 
   useEffect(
     () => () => {
       cancelStreamingForChat(chatId);
     },
-    [cancelStreamingForChat, chatId]
+    [cancelStreamingForChat, chatId],
   );
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--bg-secondary)]">
       <MessageFeed
         messages={messages}
-        isStreaming={isStreaming && streamingChatId === chatId}
+        isStreaming={isStreamingCurrentChat}
         streamingMessageId={streamingMessageId}
+        regeneratableMessageId={regeneratableMessageId}
+        onRegenerateMessage={handleRegenerateMessage}
       />
       <div className="shrink-0 pb-6 pt-2">
         <div className="mx-auto max-w-3xl px-6">
           <MessageInput
             chatId={chatId}
-            disabled={isStreaming && streamingChatId === chatId}
+            disabled={isStreamingCurrentChat}
           />
           <p className="mt-2 text-center text-xs text-[var(--text-muted)]">
             ИИ может ошибаться. Проверяйте важную информацию.

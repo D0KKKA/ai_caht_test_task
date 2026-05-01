@@ -8,12 +8,16 @@ interface MessageFeedProps {
   messages: Message[];
   isStreaming: boolean;
   streamingMessageId: string | null;
+  regeneratableMessageId?: string | null;
+  onRegenerateMessage?: (message: Message) => Promise<void> | void;
 }
 
 export function MessageFeed({
   messages,
   isStreaming,
   streamingMessageId,
+  regeneratableMessageId = null,
+  onRegenerateMessage,
 }: MessageFeedProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -46,6 +50,8 @@ export function MessageFeed({
                 showStreamingCursor={
                   isStreaming && streamingMessageId === message.id
                 }
+                showRegenerate={regeneratableMessageId === message.id}
+                onRegenerate={onRegenerateMessage}
               />
             ))}
           </div>

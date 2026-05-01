@@ -100,3 +100,12 @@ class ChatRepository(BaseRepository[Chat]):
         if commit:
             await self.db.commit()
         return bool(result.rowcount)
+
+    async def touch(self, id: UUID, *, commit: bool = True) -> bool:
+        """Update chat.updated_at without changing message_count."""
+        stmt = update(Chat).where(Chat.id == id).values(updated_at=func.now())
+        result = await self.db.execute(stmt)
+        await self.db.flush()
+        if commit:
+            await self.db.commit()
+        return bool(result.rowcount)

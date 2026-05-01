@@ -1,14 +1,11 @@
 "use client";
 
-import { useQueryClient } from "@tanstack/react-query";
 import { Message } from "@/entities/message/model/types";
-import { useMessageStore } from "@/entities/message/model/message-store";
 import { API_BASE_PATH } from "@/shared/lib/api";
-import { isAbortError, readSSEStream } from "@/shared/lib/streaming";
+import { useMessageStreamExecutor } from "./use-message-stream-executor";
 
 export function useSendMessage(chatId: string) {
-  const queryClient = useQueryClient();
-  const { startStreaming, finishStreaming } = useMessageStore();
+  const executeStream = useMessageStreamExecutor(chatId);
 
   return async (rawContent: string) => {
     const content = rawContent.trim();
@@ -17,10 +14,7 @@ export function useSendMessage(chatId: string) {
       return;
     }
 
-    const queryKey = ["chats", chatId, "messages"] as const;
     const createdAt = new Date().toISOString();
-    const requestId = crypto.randomUUID();
-    const controller = new AbortController();
     const userMessageId = `temp-user-${crypto.randomUUID()}`;
     const assistantMessageId = `temp-assistant-${crypto.randomUUID()}`;
 
@@ -42,110 +36,29 @@ export function useSendMessage(chatId: string) {
       is_summarized: false,
     };
 
-    await queryClient.cancelQueries({ queryKey });
-    queryClient.setQueryData<Message[]>(queryKey, (current = []) => [
-      ...current,
-      userMessage,
-      assistantMessage,
-    ]);
-    startStreaming({
-      requestId,
-      chatId,
-      messageId: assistantMessageId,
-      controller,
-    });
-
-    let pendingChunk = "";
-    let rafId: number | null = null;
-    let finalContent = "";
-
-    const flushPendingChunk = () => {
-      if (!pendingChunk) {
-        rafId = null;
-        return;
-      }
-
-      const chunk = pendingChunk;
-      pendingChunk = "";
-      finalContent += chunk;
-      queryClient.setQueryData<Message[]>(queryKey, (current = []) =>
+    await executeStream({
+      endpoint: `${API_BASE_PATH}/chats/${chatId}/messages`,
+      body: {
+        content,
+      },
+      assistantMessageId,
+      prepareOptimisticState: (current) => [
+        ...current,
+        userMessage,
+        assistantMessage,
+      ],
+      rollbackState: (current) =>
+        current.filter((message) => message.id !== assistantMessageId),
+      finalizeState: (current, event, finalContent) =>
         current.map((message) =>
           message.id === assistantMessageId
-            ? { ...message, content: message.content + chunk }
-            : message
-        )
-      );
-      rafId = null;
-    };
-
-    try {
-      for await (const event of readSSEStream(
-        `${API_BASE_PATH}/chats/${chatId}/messages`,
-        { content },
-        { signal: controller.signal }
-      )) {
-        if (event.type === "delta" && event.content) {
-          pendingChunk += event.content;
-
-          if (rafId === null) {
-            rafId = requestAnimationFrame(flushPendingChunk);
-          }
-
-          continue;
-        }
-
-        if (event.type === "error") {
-          throw new Error(event.detail || "Не удалось отправить сообщение.");
-        }
-
-        if (event.type === "done") {
-          if (rafId !== null) {
-            cancelAnimationFrame(rafId);
-            rafId = null;
-          }
-
-          flushPendingChunk();
-          if (!finalContent && event.content) {
-            finalContent = event.content;
-          }
-
-          queryClient.setQueryData<Message[]>(queryKey, (current = []) =>
-            current.map((message) =>
-              message.id === assistantMessageId
-                ? {
-                    ...message,
-                    id: event.message_id || assistantMessageId,
-                    content: finalContent,
-                  }
-                : message
-            )
-          );
-
-          queryClient.invalidateQueries({ queryKey });
-          queryClient.invalidateQueries({ queryKey: ["chats"] });
-          return;
-        }
-      }
-
-      throw new Error("Поток ответа завершился неожиданно.");
-    } catch (error) {
-      if (rafId !== null) {
-        cancelAnimationFrame(rafId);
-      }
-
-      queryClient.setQueryData<Message[]>(queryKey, (current = []) =>
-        current.filter((message) => message.id !== assistantMessageId)
-      );
-      queryClient.invalidateQueries({ queryKey });
-
-      if (isAbortError(error)) {
-        queryClient.invalidateQueries({ queryKey: ["chats"] });
-        return;
-      }
-
-      throw error;
-    } finally {
-      finishStreaming(requestId);
-    }
+            ? {
+                ...message,
+                id: event.message_id || assistantMessageId,
+                content: finalContent,
+              }
+            : message,
+        ),
+    });
   };
 }

@@ -19,6 +19,12 @@ class MessageCreate(BaseModel):
     content: str = Field(min_length=1, max_length=MAX_MESSAGE_INPUT_CHARS, description="Message content")
 
 
+class MessageRegenerateRequest(BaseModel):
+    """Schema for regenerating the last assistant message."""
+
+    pass
+
+
 class MessageResponse(MessageBase):
     """Schema for message responses."""
 

@@ -11,10 +11,6 @@ export interface Message {
   is_summarized: boolean;
 }
 
-export interface CreateMessageRequest {
-  content: string;
-}
-
 export interface SSEEvent {
   type: "delta" | "done" | "error";
   content?: string;

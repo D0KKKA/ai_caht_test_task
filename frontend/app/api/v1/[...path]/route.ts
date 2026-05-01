@@ -34,13 +34,24 @@ async function proxyRequest(request: Request): Promise<Response> {
   headers.delete("connection");
   headers.delete("content-length");
 
-  const upstreamResponse = await fetch(getTargetUrl(request.url), {
-    method: request.method,
-    headers,
-    body: canHaveBody(request.method) ? await request.text() : undefined,
-    cache: "no-store",
-    redirect: "manual",
-  });
+  let upstreamResponse: Response;
+
+  try {
+    upstreamResponse = await fetch(getTargetUrl(request.url), {
+      method: request.method,
+      headers,
+      body: canHaveBody(request.method) ? await request.text() : undefined,
+      cache: "no-store",
+      redirect: "manual",
+    });
+  } catch {
+    return Response.json(
+      {
+        detail: "Backend is unavailable",
+      },
+      { status: 502 },
+    );
+  }
 
   const responseHeaders = new Headers(upstreamResponse.headers);
   responseHeaders.delete("content-encoding");

@@ -78,3 +78,19 @@ class MessageService:
         return await self.message_repo.get_by_chat_id(
             chat_id, limit=limit, offset=offset
         )
+
+    async def update_message_content(
+        self,
+        message_id: UUID,
+        content: str,
+        db: AsyncSession,
+        *,
+        commit: bool = True,
+    ) -> Message | None:
+        """Replace stored content for an existing message."""
+        self.message_repo.db = db
+        return await self.message_repo.update(
+            message_id,
+            content=content,
+            commit=commit,
+        )

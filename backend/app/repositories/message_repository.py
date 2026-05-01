@@ -49,6 +49,17 @@ class MessageRepository(BaseRepository[Message]):
         result = await self.db.execute(query)
         return result.scalars().all()
 
+    async def get_latest_by_chat_id(self, chat_id: UUID) -> Message | None:
+        """Get the latest message for a chat."""
+        query = (
+            select(Message)
+            .where(Message.chat_id == chat_id)
+            .order_by(Message.created_at.desc(), Message.id.desc())
+            .limit(1)
+        )
+        result = await self.db.execute(query)
+        return result.scalar_one_or_none()
+
     async def get_recent_unsummarized(
         self, chat_id: UUID, limit: int = 20
     ) -> List[Message]:
