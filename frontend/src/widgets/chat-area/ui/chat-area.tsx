@@ -124,7 +124,7 @@ export function ChatArea({ chatId }: ChatAreaProps) {
         onRegenerateMessage={handleRegenerateMessage}
       />
       <div className="shrink-0 pb-6 pt-2">
-        <div className="mx-auto max-w-3xl px-6">
+        <div className="mx-auto max-w-3xl px-4 sm:px-6">
           <MessageInput
             chatId={chatId}
             disabled={isStreamingCurrentChat}

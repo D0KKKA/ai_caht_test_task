@@ -3,25 +3,33 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useChats } from "@/entities/chat/api/chat-api";
 import { ChatListItem } from "@/entities/chat/ui/chat-list-item";
-import { Moon, Plus } from "lucide-react";
+import { Moon, Plus, X } from "lucide-react";
+import { cn } from "@/shared/lib/utils";
 import { useTheme } from "next-themes";
 
-export function Sidebar() {
+interface SidebarProps {
+  isDesktopOpen: boolean;
+  isMobileOpen: boolean;
+  onCloseMobile: () => void;
+}
+
+interface SidebarContentProps {
+  activeChatId: string | null;
+  onNavigate?: () => void;
+}
+
+function SidebarContent({ activeChatId, onNavigate }: SidebarContentProps) {
   const router = useRouter();
-  const pathname = usePathname();
   const { data: chats = [], isLoading } = useChats();
   const { resolvedTheme, setTheme } = useTheme();
 
-  const activeChatId = pathname.startsWith("/chat/")
-    ? pathname.replace("/chat/", "")
-    : null;
-
   const handleNewChat = () => {
     router.push("/chat");
+    onNavigate?.();
   };
 
   return (
-    <aside className="flex h-screen w-64 shrink-0 flex-col overflow-hidden border-r border-[var(--border)] bg-[var(--bg-sidebar)]">
+    <div className="flex h-full flex-col overflow-hidden bg-[var(--bg-sidebar)]">
       <div className="p-3">
         <button
           type="button"
@@ -54,6 +62,7 @@ export function Sidebar() {
                 key={chat.id}
                 chat={chat}
                 isActive={activeChatId === chat.id}
+                onSelect={onNavigate}
               />
             ))}
           </div>
@@ -70,6 +79,61 @@ export function Sidebar() {
           Сменить тему
         </button>
       </div>
-    </aside>
+    </div>
+  );
+}
+
+export function Sidebar({
+  isDesktopOpen,
+  isMobileOpen,
+  onCloseMobile,
+}: SidebarProps) {
+  const pathname = usePathname();
+  const activeChatId = pathname.startsWith("/chat/")
+    ? pathname.replace("/chat/", "")
+    : null;
+
+  return (
+    <>
+      <aside
+        className={cn(
+          "hidden h-full shrink-0 overflow-hidden border-r border-[var(--border)] transition-[width] duration-200 md:flex",
+          isDesktopOpen ? "w-64" : "w-0 border-r-0",
+        )}
+        aria-hidden={!isDesktopOpen}
+      >
+        <div
+          className={cn(
+            "flex w-64 min-w-64 flex-col overflow-hidden transition-opacity duration-200",
+            isDesktopOpen ? "opacity-100" : "pointer-events-none opacity-0",
+          )}
+        >
+          <SidebarContent activeChatId={activeChatId} />
+        </div>
+      </aside>
+
+      {isMobileOpen ? (
+        <aside className="fixed inset-y-0 left-0 z-50 flex w-[min(20rem,85vw)] flex-col overflow-hidden border-r border-[var(--border)] bg-[var(--bg-sidebar)] shadow-2xl transition-transform duration-200 md:hidden">
+          <div className="flex items-center justify-between border-b border-[var(--border)] p-3">
+            <span className="text-sm font-medium text-[var(--text-primary)]">
+              Чаты
+            </span>
+            <button
+              type="button"
+              onClick={onCloseMobile}
+              className="flex h-9 w-9 items-center justify-center rounded-xl text-[var(--text-secondary)] transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+              aria-label="Закрыть список чатов"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <SidebarContent
+            activeChatId={activeChatId}
+            onNavigate={onCloseMobile}
+          />
+        </aside>
+      ) : null}
+    </>
   );
 }

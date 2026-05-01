@@ -5,7 +5,6 @@ import { useCreateChat } from "@/entities/chat/api/chat-api";
 import { MessageInput } from "@/features/send-message/ui/message-input";
 import { getPendingMessageStorageKey } from "@/shared/lib/pending-message";
 import { EmptyChatState } from "@/shared/ui/empty-chat-state";
-import { Sidebar } from "@/widgets/sidebar/ui/sidebar";
 
 export default function NewChatPage() {
   const router = useRouter();
@@ -18,22 +17,19 @@ export default function NewChatPage() {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-white dark:bg-gray-950">
-      <Sidebar />
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--bg-secondary)]">
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-3xl px-6 py-8">
-            <EmptyChatState />
-          </div>
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--bg-secondary)]">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
+          <EmptyChatState />
         </div>
-        <div className="shrink-0 pb-6 pt-2">
-          <div className="mx-auto max-w-3xl px-6">
-            <MessageInput
-              chatId="new"
-              onSendMessage={handleSendMessage}
-              disabled={createChat.isPending}
-            />
-          </div>
+      </div>
+      <div className="shrink-0 pb-6 pt-2">
+        <div className="mx-auto max-w-3xl px-4 sm:px-6">
+          <MessageInput
+            chatId="new"
+            onSendMessage={handleSendMessage}
+            disabled={createChat.isPending}
+          />
         </div>
       </div>
     </div>

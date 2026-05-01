@@ -8,14 +8,16 @@ import { useDeleteChat } from "../api/chat-api";
 interface ChatListItemProps {
   chat: Chat;
   isActive: boolean;
+  onSelect?: () => void;
 }
 
-export function ChatListItem({ chat, isActive }: ChatListItemProps) {
+export function ChatListItem({ chat, isActive, onSelect }: ChatListItemProps) {
   const router = useRouter();
   const deleteChat = useDeleteChat();
 
   const handleClick = () => {
     router.push(`/chat/${chat.id}`);
+    onSelect?.();
   };
 
   const handleDelete = () => {
@@ -23,6 +25,7 @@ export function ChatListItem({ chat, isActive }: ChatListItemProps) {
       onSuccess: () => {
         if (isActive) {
           router.replace("/chat");
+          onSelect?.();
         }
       },
     });
