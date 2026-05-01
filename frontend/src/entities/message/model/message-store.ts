@@ -1,30 +1,73 @@
 import { create } from "zustand";
 
+interface StreamingSession {
+  requestId: string;
+  chatId: string;
+  messageId: string;
+  controller: AbortController;
+}
+
 interface MessageStore {
   isStreaming: boolean;
   streamingChatId: string | null;
   streamingMessageId: string | null;
+  activeRequestId: string | null;
+  abortController: AbortController | null;
 
-  startStreaming: (chatId: string, messageId: string) => void;
-  finishStreaming: () => void;
+  startStreaming: (session: StreamingSession) => void;
+  finishStreaming: (requestId: string) => void;
+  cancelStreaming: (requestId?: string) => void;
+  cancelStreamingForChat: (chatId: string) => void;
 }
 
-export const useMessageStore = create<MessageStore>((set) => ({
+const idleStreamingState = {
   isStreaming: false,
   streamingChatId: null,
   streamingMessageId: null,
+  activeRequestId: null,
+  abortController: null,
+};
 
-  startStreaming: (chatId, messageId) =>
+export const useMessageStore = create<MessageStore>((set, get) => ({
+  ...idleStreamingState,
+
+  startStreaming: ({ requestId, chatId, messageId, controller }) => {
+    get().abortController?.abort();
+
     set({
       isStreaming: true,
       streamingChatId: chatId,
       streamingMessageId: messageId,
-    }),
+      activeRequestId: requestId,
+      abortController: controller,
+    });
+  },
 
-  finishStreaming: () =>
-    set({
-      isStreaming: false,
-      streamingChatId: null,
-      streamingMessageId: null,
-    }),
+  finishStreaming: (requestId) => {
+    if (get().activeRequestId !== requestId) {
+      return;
+    }
+
+    set({ ...idleStreamingState });
+  },
+
+  cancelStreaming: (requestId) => {
+    const { abortController, activeRequestId } = get();
+    if (!abortController || (requestId && activeRequestId !== requestId)) {
+      return;
+    }
+
+    abortController.abort();
+    set({ ...idleStreamingState });
+  },
+
+  cancelStreamingForChat: (chatId) => {
+    const { abortController, streamingChatId } = get();
+    if (!abortController || streamingChatId !== chatId) {
+      return;
+    }
+
+    abortController.abort();
+    set({ ...idleStreamingState });
+  },
 }));

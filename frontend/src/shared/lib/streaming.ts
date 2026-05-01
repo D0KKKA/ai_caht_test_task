@@ -1,9 +1,14 @@
 import { SSEEvent } from "@/entities/message/model/types";
 import { getOrCreateClientId } from "@/shared/lib/client-id";
 
+interface ReadSSEStreamOptions {
+  signal?: AbortSignal;
+}
+
 export async function* readSSEStream(
   url: string,
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  options: ReadSSEStreamOptions = {}
 ): AsyncGenerator<SSEEvent> {
   const clientId = getOrCreateClientId();
 
@@ -15,6 +20,7 @@ export async function* readSSEStream(
     },
     body: JSON.stringify(body),
     cache: "no-store",
+    signal: options.signal,
   });
 
   if (!response.ok) {
@@ -29,6 +35,11 @@ export async function* readSSEStream(
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  const cancelReader = () => {
+    void reader.cancel().catch(() => undefined);
+  };
+
+  options.signal?.addEventListener("abort", cancelReader);
 
   try {
     while (true) {
@@ -55,8 +66,17 @@ export async function* readSSEStream(
       }
     }
   } finally {
+    options.signal?.removeEventListener("abort", cancelReader);
     reader.releaseLock();
   }
+}
+
+export function isAbortError(error: unknown): boolean {
+  return (
+    error instanceof DOMException
+      ? error.name === "AbortError"
+      : error instanceof Error && error.name === "AbortError"
+  );
 }
 
 function parseSSEEvent(chunk: string): SSEEvent | null {

@@ -21,7 +21,9 @@ export function MessageInput({
   const [content, setContent] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const isStreaming = useMessageStore((s) => s.isStreaming);
+  const isStreaming = useMessageStore(
+    (state) => state.isStreaming && state.streamingChatId === chatId
+  );
   const sendMessage = useSendMessage(chatId);
 
   useEffect(() => {

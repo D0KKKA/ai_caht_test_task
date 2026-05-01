@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Message } from "@/entities/message/model/types";
 import { useMessageStore } from "@/entities/message/model/message-store";
 import { API_BASE_PATH } from "@/shared/lib/api";
-import { readSSEStream } from "@/shared/lib/streaming";
+import { isAbortError, readSSEStream } from "@/shared/lib/streaming";
 
 export function useSendMessage(chatId: string) {
   const queryClient = useQueryClient();
@@ -19,6 +19,8 @@ export function useSendMessage(chatId: string) {
 
     const queryKey = ["chats", chatId, "messages"] as const;
     const createdAt = new Date().toISOString();
+    const requestId = crypto.randomUUID();
+    const controller = new AbortController();
     const userMessageId = `temp-user-${crypto.randomUUID()}`;
     const assistantMessageId = `temp-assistant-${crypto.randomUUID()}`;
 
@@ -46,7 +48,12 @@ export function useSendMessage(chatId: string) {
       userMessage,
       assistantMessage,
     ]);
-    startStreaming(chatId, assistantMessageId);
+    startStreaming({
+      requestId,
+      chatId,
+      messageId: assistantMessageId,
+      controller,
+    });
 
     let pendingChunk = "";
     let rafId: number | null = null;
@@ -74,7 +81,8 @@ export function useSendMessage(chatId: string) {
     try {
       for await (const event of readSSEStream(
         `${API_BASE_PATH}/chats/${chatId}/messages`,
-        { content }
+        { content },
+        { signal: controller.signal }
       )) {
         if (event.type === "delta" && event.content) {
           pendingChunk += event.content;
@@ -129,9 +137,15 @@ export function useSendMessage(chatId: string) {
         current.filter((message) => message.id !== assistantMessageId)
       );
       queryClient.invalidateQueries({ queryKey });
+
+      if (isAbortError(error)) {
+        queryClient.invalidateQueries({ queryKey: ["chats"] });
+        return;
+      }
+
       throw error;
     } finally {
-      finishStreaming();
+      finishStreaming(requestId);
     }
   };
 }

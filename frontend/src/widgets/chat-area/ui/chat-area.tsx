@@ -15,7 +15,12 @@ interface ChatAreaProps {
 
 export function ChatArea({ chatId }: ChatAreaProps) {
   const { data: messages = [] } = useMessages(chatId);
-  const { isStreaming, streamingChatId, streamingMessageId } = useMessageStore();
+  const {
+    isStreaming,
+    streamingChatId,
+    streamingMessageId,
+    cancelStreamingForChat,
+  } = useMessageStore();
   const sendMessage = useSendMessage(chatId);
   const attemptedPendingChatIds = useRef<Set<string>>(new Set());
 
@@ -52,6 +57,13 @@ export function ChatArea({ chatId }: ChatAreaProps) {
     attemptedPendingChatIds.current.add(chatId);
     void attemptPendingMessage(chatId, pendingMessage, storageKey);
   }, [chatId]);
+
+  useEffect(
+    () => () => {
+      cancelStreamingForChat(chatId);
+    },
+    [cancelStreamingForChat, chatId]
+  );
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--bg-secondary)]">
