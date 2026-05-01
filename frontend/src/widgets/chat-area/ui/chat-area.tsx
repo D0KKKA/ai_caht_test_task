@@ -47,14 +47,19 @@ export function ChatArea({ chatId }: ChatAreaProps) {
     : serverMessages;
 
   return (
-    <div className="flex flex-1 flex-col bg-white dark:bg-gray-950">
+    <div className="flex flex-1 flex-col bg-[var(--bg-secondary)]">
       <MessageFeed
         messages={displayMessages}
         isStreaming={isStreaming}
         streamingContent={streamingContent}
       />
-      <div className="border-t border-gray-200 p-4 dark:border-gray-800">
-        <MessageInput chatId={chatId} disabled={isStreaming} />
+      <div className="pb-6 pt-2">
+        <div className="mx-auto max-w-3xl px-6">
+          <MessageInput chatId={chatId} disabled={isStreaming} />
+          <p className="mt-2 text-center text-xs text-[var(--text-muted)]">
+            ИИ может ошибаться. Проверяйте важную информацию.
+          </p>
+        </div>
       </div>
     </div>
   );

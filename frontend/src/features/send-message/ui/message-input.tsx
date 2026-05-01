@@ -36,19 +36,10 @@ export function MessageInput({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("[MessageInput] handleSubmit:", { content, isStreaming, chatId });
-
-    if (!content.trim() || isStreaming) {
-      console.log("[MessageInput] Skipped: empty or streaming");
-      return;
-    }
-
-    console.log("[MessageInput] Calling sendMessage or onSendMessage");
+    if (!content.trim() || isStreaming) return;
     if (onSendMessage) {
-      console.log("[MessageInput] Using custom onSendMessage");
       await onSendMessage(content);
     } else {
-      console.log("[MessageInput] Using sendMessage");
       await sendMessage(content);
     }
     setContent("");
@@ -65,25 +56,24 @@ export function MessageInput({
   const isDisabled = disabled || isStreaming || !content.trim();
 
   return (
-    <form onSubmit={handleSubmit} className="flex gap-2">
+    <form onSubmit={handleSubmit} className="relative flex items-end gap-3 rounded-2xl border border-[var(--border-strong)] bg-[var(--bg-secondary)] px-4 py-3 shadow-[var(--shadow-md)] transition-all focus-within:border-[var(--accent)] focus-within:shadow-[0_0_0_3px_rgba(16,163,127,0.12),var(--shadow-md)]">
       <textarea
         ref={textareaRef}
         value={content}
         onChange={(e) => setContent(e.target.value)}
         onKeyDown={handleKeyDown}
         disabled={disabled || isStreaming}
-        placeholder="Send a message... (Shift+Enter for newline)"
-        className="flex-1 resize-none rounded-lg border border-gray-200 p-3 dark:border-gray-700 dark:bg-gray-900 disabled:opacity-50"
+        placeholder="Напишите сообщение…"
+        className="flex-1 resize-none bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none disabled:opacity-50"
         rows={1}
       />
-      <Button
+      <button
         type="submit"
         disabled={isDisabled}
-        size="icon"
-        className="h-10 w-10"
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--accent)] text-white transition-opacity disabled:opacity-30 hover:bg-[var(--accent-hover)]"
       >
-        <Send className="h-4 w-4" />
-      </Button>
+        <Send className="h-3.5 w-3.5" />
+      </button>
     </form>
   );
 }

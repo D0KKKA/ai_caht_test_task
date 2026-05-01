@@ -30,17 +30,22 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
             </a>
           ),
           // Code block styling
+          pre: ({ children }) => (
+            <pre className="my-3 overflow-x-auto rounded-xl border border-[var(--border)] bg-[#f0f0f0] p-4 dark:bg-[#1e1e2e]">
+              {children}
+            </pre>
+          ),
           code: ({ children, ...props }: any) => {
             const isInline = !props.className?.includes("language-");
             if (isInline) {
               return (
-                <code className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-sm dark:bg-gray-800">
+                <code className="rounded-md bg-[#e4e4e4] px-1.5 py-0.5 font-mono text-[0.82em] text-[#c7254e] dark:bg-[#2a2a3d] dark:text-[#e06c75]">
                   {children}
                 </code>
               );
             }
             return (
-              <code className="block rounded-lg bg-gray-100 p-3 font-mono text-sm dark:bg-gray-800 overflow-x-auto">
+              <code className="font-mono text-sm leading-relaxed text-[#1a1a1a] dark:text-[#cdd6f4]">
                 {children}
               </code>
             );

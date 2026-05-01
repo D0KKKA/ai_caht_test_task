@@ -20,41 +20,44 @@ export function MessageFeed({
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
-    if (scrollContainerRef.current) {
-      const scrollContainer = scrollContainerRef.current;
-      scrollContainer.scrollTop = scrollContainer.scrollHeight;
-    }
+    const raf = requestAnimationFrame(() => {
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+      }
+    });
+    return () => cancelAnimationFrame(raf);
   }, [messages, isStreaming, streamingContent]);
 
   return (
     <div
       ref={scrollContainerRef}
-      className="flex-1 overflow-y-auto space-y-4 p-4"
+      className="flex-1 overflow-y-auto"
     >
-      {messages.length === 0 && !isStreaming ? (
-        <div className="flex h-full items-center justify-center text-gray-400">
-          <div className="text-center">
-            <p className="text-lg">No messages yet</p>
-            <p className="text-sm">Send a message to start the conversation</p>
+      <div className="mx-auto max-w-3xl px-6 py-8">
+        {messages.length === 0 && !isStreaming ? (
+          <div className="flex h-[60vh] items-center justify-center">
+            <div className="text-center">
+              <div className="mb-4 text-4xl">✦</div>
+              <p className="text-lg font-medium text-[var(--text-primary)]">Чем могу помочь?</p>
+              <p className="mt-1 text-sm text-[var(--text-muted)]">Напишите сообщение, чтобы начать разговор</p>
+            </div>
           </div>
-        </div>
-      ) : (
-        <>
-          {messages.map((message) => (
-            <MessageBubble key={message.id} message={message} />
-          ))}
-          {isStreaming && (
-            <div className="flex justify-start">
-              <div className="max-w-[80%] rounded-lg bg-gray-100 px-4 py-3 dark:bg-gray-800">
-                <div className="whitespace-pre-wrap break-words text-gray-900 dark:text-gray-100">
-                  {streamingContent}
+        ) : (
+          <div className="space-y-6">
+            {messages.map((message) => (
+              <MessageBubble key={message.id} message={message} />
+            ))}
+            {isStreaming && (
+              <div className="flex justify-start">
+                <div className="w-full text-sm leading-relaxed text-[var(--text-primary)]">
+                  <span className="whitespace-pre-wrap break-words">{streamingContent}</span>
                   <StreamingCursor />
                 </div>
               </div>
-            </div>
-          )}
-        </>
-      )}
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

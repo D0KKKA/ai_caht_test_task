@@ -20,12 +20,7 @@ export function useSendMessage(chatId: string) {
   } = useMessageStore();
 
   return async (content: string) => {
-    console.log("[useSendMessage] Called with:", { content, chatId });
-
-    if (!content.trim() || !chatId) {
-      console.log("[useSendMessage] Invalid: empty content or no chatId");
-      return;
-    }
+    if (!content.trim() || !chatId) return;
 
     // Add user message optimistically
     const userMessage: Message = {
@@ -37,7 +32,6 @@ export function useSendMessage(chatId: string) {
       is_summarized: false,
     };
     addMessage(userMessage);
-    window.alert(`Message added to store! Total: ${useMessageStore.getState().messages.length}`);
 
     // Create placeholder for assistant message
     const placeholderId = `streaming-${Date.now()}`;
@@ -58,10 +52,24 @@ export function useSendMessage(chatId: string) {
     try {
       const url = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/v1/chats/${chatId}/messages`;
 
+      let pendingChunk = "";
+      let rafId: number | null = null;
+
+      const flush = () => {
+        if (pendingChunk) {
+          appendStreamingContent(pendingChunk);
+          pendingChunk = "";
+        }
+        rafId = null;
+      };
+
       for await (const event of readSSEStream(url, { content })) {
         if (event.type === "delta" && event.content) {
-          appendStreamingContent(event.content);
+          pendingChunk += event.content;
+          if (!rafId) rafId = requestAnimationFrame(flush);
         } else if (event.type === "done") {
+          if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+          flush();
           // Replace placeholder with real message
           const finalMessage: Message = {
             id: event.message_id || placeholderId,

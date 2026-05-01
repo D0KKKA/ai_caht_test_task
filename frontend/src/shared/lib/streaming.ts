@@ -13,7 +13,6 @@ export async function* readSSEStream(
   body: Record<string, unknown>
 ): AsyncGenerator<SSEEvent> {
   const clientId = getClientIdFromLocalStorage();
-  console.log("[readSSEStream] Starting:", { url, clientId, bodyContent: body.content });
 
   try {
     const response = await fetch(url, {
@@ -24,8 +23,6 @@ export async function* readSSEStream(
       },
       body: JSON.stringify(body),
     });
-
-    console.log("[readSSEStream] Got response:", { status: response.status, ok: response.ok });
 
     if (!response.ok) {
       const text = await response.text();
