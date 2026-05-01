@@ -1,10 +1,16 @@
 """Message service for message operations."""
 
+import logging
 from uuid import UUID
+
+from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.message import Message
+from app.repositories.chat_repository import ChatRepository
 from app.repositories.message_repository import MessageRepository
+
+logger = logging.getLogger(__name__)
 
 
 class MessageService:
@@ -78,6 +84,39 @@ class MessageService:
         return await self.message_repo.get_by_chat_id(
             chat_id, limit=limit, offset=offset
         )
+
+    async def save_user_message(
+        self,
+        chat_id: UUID,
+        content: str,
+        db: AsyncSession,
+        chat_repo: ChatRepository,
+    ) -> tuple[int, bool]:
+        """Atomically persist a user message and update the chat message count.
+
+        Returns:
+            (message_count, is_first_message) — the new total count and whether
+            this was the first message in the chat.
+        """
+        try:
+            await self.create_user_message(chat_id, content, db, commit=False)
+            count = await chat_repo.increment_message_count(chat_id, 1, commit=False)
+            if count is None:
+                await db.rollback()
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found"
+                )
+            await db.commit()
+            return count, count == 1
+        except HTTPException:
+            raise
+        except Exception as exc:
+            await db.rollback()
+            logger.error("Failed to persist user message for chat %s: %s", chat_id, exc)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to persist message",
+            ) from exc
 
     async def update_message_content(
         self,
