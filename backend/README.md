@@ -79,13 +79,6 @@ PostgreSQL здесь логичнее, чем NoSQL, потому что дом
 - `app/repositories/` — SQLAlchemy-слой доступа к данным.
 - `alembic/` — миграции схемы.
 
-## Почему конфигурация устроена через отдельные DB-поля
-
-Приложение не использует один `DATABASE_URL` в `.env`, а собирает DSN из `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`. Это выбрано по практической причине:
-
-- проще переключаться между `localhost` и Docker hostname `postgres`;
-- `docker-compose.yml`, backend runtime и Alembic читают один и тот же набор переменных;
-- меньше риска расхождения между runtime-подключением и миграциями.
 
 ## Локальный запуск
 
